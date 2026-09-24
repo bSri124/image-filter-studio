@@ -1,88 +1,18 @@
-const $=s=>document.querySelector(s);
-const canvas=$("#canvas"), ctx=canvas.getContext("2d",{willReadFrequently:true});
-const fileInput=$("#fileInput"), chooseBtn=$("#chooseBtn"), changeBtn=$("#changeBtn"), dropZone=$("#dropZone");
-const editor=$("#editor"), downloadBtn=$("#downloadBtn"), resetBtn=$("#resetBtn"), emptyState=$("#emptyState");
-const intensity=$("#intensity"), intensityValue=$("#intensityValue"), fileName=$("#fileName"), dimensions=$("#dimensions");
-let source=null, currentFilter="original";
-
-chooseBtn.onclick=()=>fileInput.click();
-changeBtn.onclick=()=>fileInput.click();
-dropZone.addEventListener("click",e=>{if(e.target!==chooseBtn) fileInput.click()});
-["dragenter","dragover"].forEach(ev=>dropZone.addEventListener(ev,e=>{e.preventDefault();dropZone.classList.add("drag")}));
-["dragleave","drop"].forEach(ev=>dropZone.addEventListener(ev,e=>{e.preventDefault();dropZone.classList.remove("drag")}));
-dropZone.addEventListener("drop",e=>{const f=e.dataTransfer.files[0];if(f) loadFile(f)});
-fileInput.onchange=e=>{if(e.target.files[0]) loadFile(e.target.files[0])};
-
-document.querySelectorAll(".filter").forEach(b=>b.onclick=()=>{
-  document.querySelectorAll(".filter").forEach(x=>x.classList.remove("active"));
-  b.classList.add("active"); currentFilter=b.dataset.filter; render();
-});
-intensity.oninput=()=>{intensityValue.textContent=intensity.value+"%";render()};
-resetBtn.onclick=()=>{currentFilter="original";intensity.value=100;intensityValue.textContent="100%";document.querySelectorAll(".filter").forEach(x=>x.classList.toggle("active",x.dataset.filter==="original"));render()};
-
-function loadFile(file){
-  if(!file.type.startsWith("image/")) return alert("Please choose an image file.");
-  const reader=new FileReader();
-  reader.onload=()=>{const img=new Image();img.onload=()=>{
-    source=img; fileName.textContent=file.name; dimensions.textContent=`${img.naturalWidth} × ${img.naturalHeight}`;
-    editor.classList.remove("hidden");dropZone.classList.add("hidden");downloadBtn.disabled=false;resetBtn.disabled=false;emptyState.classList.add("hidden");
-    fitCanvas(img);render();
-  };img.src=reader.result};reader.readAsDataURL(file);
-}
-function fitCanvas(img){
-  const max=2400, scale=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
-  canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
-}
-function baseImage(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.filter="none";ctx.globalAlpha=1;ctx.drawImage(source,0,0,canvas.width,canvas.height);
-}
-function mixWithOriginal(filtered,amount){
-  const original=document.createElement("canvas");original.width=canvas.width;original.height=canvas.height;
-  const o=original.getContext("2d");o.drawImage(source,0,0,canvas.width,canvas.height);
-  ctx.globalAlpha=amount;ctx.drawImage(filtered,0,0);ctx.globalAlpha=1;
-}
-function render(){
-  if(!source)return;
-  baseImage();
-  const a=Number(intensity.value)/100;
-  if(currentFilter==="original")return;
-  const temp=document.createElement("canvas");temp.width=canvas.width;temp.height=canvas.height;
-  const t=temp.getContext("2d");
-  t.drawImage(source,0,0,canvas.width,canvas.height);
-  if(currentFilter==="enhance"){t.filter=`contrast(${1+0.28*a}) saturate(${1+0.24*a}) brightness(${1+0.06*a})`;t.drawImage(source,0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="grey"){t.filter=`grayscale(${a})`;t.drawImage(source,0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="bw"){t.filter=`grayscale(1) contrast(${1+0.65*a})`;t.drawImage(source,0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="sepia"){t.filter=`sepia(${a}) saturate(${1+0.15*a})`;t.drawImage(source,0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="warm"){t.filter=`sepia(${.22*a}) saturate(${1+.25*a}) contrast(${1+.08*a})`;t.drawImage(source,0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="cool"){t.filter=`saturate(${1+.12*a}) contrast(${1+.08*a})`;t.drawImage(source,0,0,canvas.width,canvas.height);t.globalCompositeOperation="screen";t.globalAlpha=.10*a;t.fillStyle="#3b6fa3";t.fillRect(0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="vintage"){t.filter=`sepia(${.35*a}) contrast(${1+.12*a}) saturate(${1-.18*a}) brightness(${1+.03*a})`;t.drawImage(source,0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="retro80"){t.filter=`contrast(${1+.22*a}) saturate(${1+.35*a})`;t.drawImage(source,0,0,canvas.width,canvas.height);t.globalCompositeOperation="screen";t.globalAlpha=.16*a;t.fillStyle="#ff4fa3";t.fillRect(0,0,canvas.width,canvas.height);t.globalCompositeOperation="multiply";t.fillStyle="#3856ff";t.globalAlpha=.08*a;t.fillRect(0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="dramatic"){t.filter=`contrast(${1+.55*a}) saturate(${1+.18*a}) brightness(${1-.08*a})`;t.drawImage(source,0,0,canvas.width,canvas.height)}
-  else if(currentFilter==="bloom"){drawBloom(t,a);return}
-  else if(currentFilter==="pixels"){drawPixels(t,a);return}
-  t.globalAlpha=1;t.globalCompositeOperation="source-over";
-  ctx.clearRect(0,0,canvas.width,canvas.height);ctx.globalAlpha=a;ctx.drawImage(temp,0,0);ctx.globalAlpha=1;
-  if(a<1) mixWithOriginal(temp,1-a);
-}
-function drawBloom(t,a){
-  t.drawImage(source,0,0,canvas.width,canvas.height);
-  const blur=document.createElement("canvas");blur.width=canvas.width;blur.height=canvas.height;
-  const b=blur.getContext("2d");b.filter=`blur(${Math.max(2,14*a)}px) brightness(${1+.15*a})`;b.drawImage(source,0,0,canvas.width,canvas.height);
-  t.globalCompositeOperation="screen";t.globalAlpha=.52*a;t.drawImage(blur,0,0);t.globalAlpha=1;t.globalCompositeOperation="source-over";
-  ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(t.canvas,0,0);
-}
-function drawPixels(t,a){
-  const block=Math.max(3,Math.round(3+17*a));
-  const w=Math.max(1,Math.floor(canvas.width/block)),h=Math.max(1,Math.floor(canvas.height/block));
-  const small=document.createElement("canvas");small.width=w;small.height=h;
-  const s=small.getContext("2d");s.imageSmoothingEnabled=true;s.drawImage(source,0,0,w,h);
-  t.imageSmoothingEnabled=false;t.drawImage(s,0,0,canvas.width,canvas.height);
-  ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(t.canvas,0,0);ctx.imageSmoothingEnabled=true;
-}
-downloadBtn.onclick=()=>{
-  if(!source)return;
-  const link=document.createElement("a");
-  const safe=(fileName.textContent||"image").replace(/\.[^.]+$/,"");
-  link.download=`${safe}-${currentFilter}.png`;link.href=canvas.toDataURL("image/png");link.click();
-};
+const $=s=>document.querySelector(s);const canvas=$("#canvas"),ctx=canvas.getContext("2d"),fileInput=$("#fileInput");let source=null,currentFilter="original",previewMax=2200;
+const filters={original:"Original",enhance:"Enhance",bloom:"Bloom",grey:"Grey",bw:"Black & White",retro80:"1980's Film",vhs:"VHS",polaroid:"Polaroid",pixels:"Pixel Art",comic:"Comic",sketch:"Sketch",sepia:"Sepia",vintage:"Vintage",film:"Cinematic Film",moody:"Moody",dramatic:"Dramatic"};
+const grid=$("#filterGrid");Object.entries(filters).forEach(([id,name])=>{let b=document.createElement('button');b.className='filter'+(id==='original'?' active':'');b.dataset.filter=id;b.innerHTML='<span>✦</span>'+name;b.onclick=()=>{currentFilter=id;document.querySelectorAll('.filter').forEach(x=>x.classList.remove('active'));b.classList.add('active');render()};grid.appendChild(b)});
+$("#chooseBtn").onclick=()=>fileInput.click();$("#changeBtn").onclick=()=>fileInput.click();fileInput.onchange=e=>e.target.files[0]&&load(e.target.files[0]);$("#resetBtn").onclick=()=>{currentFilter='original';document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x.dataset.filter==='original'));render()};$("#intensity").oninput=render;
+function load(f){if(!f.type.startsWith('image/'))return alert('Please choose an image.');let u=URL.createObjectURL(f),i=new Image();i.onload=()=>{source=i;$("#fileName").textContent=f.name;$("#dimensions").textContent=`${i.naturalWidth} × ${i.naturalHeight}`;$("#editor").classList.remove('hidden');$("#dropZone").classList.add('hidden');$("#downloadBtn").disabled=false;$("#resetBtn").disabled=false;URL.revokeObjectURL(u);render()};i.src=u}
+function workSize(){let q=Math.min(1,previewMax/Math.max(source.naturalWidth,source.naturalHeight));return[Math.max(1,Math.round(source.naturalWidth*q)),Math.max(1,Math.round(source.naturalHeight*q))]}
+function C(w,h){let c=document.createElement('canvas');c.width=w;c.height=h;return c}function src(c){c.getContext('2d').drawImage(source,0,0,c.width,c.height)}
+function grain(c,a){let x=c.getContext('2d'),im=x.getImageData(0,0,c.width,c.height),p=im.data,n=25*a;for(let i=0;i<p.length;i+=4){let g=(Math.random()-.5)*n;p[i]+=g;p[i+1]+=g;p[i+2]+=g}x.putImageData(im,0,0)}
+function vignette(c,a){let x=c.getContext('2d'),g=x.createRadialGradient(c.width/2,c.height/2,Math.min(c.width,c.height)*.2,c.width/2,c.height/2,Math.max(c.width,c.height)*.72);g.addColorStop(0,'transparent');g.addColorStop(1,`rgba(0,0,0,${.55*a})`);x.fillStyle=g;x.fillRect(0,0,c.width,c.height)}
+function transform(type,w,h){let a=+$("#intensity").value/100,c=C(w,h),x=c.getContext('2d');src(c);if(type==='original')return c;
+if(type==='enhance')x.filter=`contrast(${1+.35*a}) saturate(${1+.3*a}) brightness(${1+.06*a})`;else if(type==='grey')x.filter=`grayscale(${a})`;else if(type==='bw')x.filter=`grayscale(1) contrast(${1+.75*a})`;else if(type==='sepia')x.filter=`sepia(${a})`;else if(type==='vintage')x.filter=`sepia(${.3*a}) saturate(${1-.25*a}) contrast(${1+.18*a})`;else if(type==='film')x.filter=`contrast(${1+.3*a}) saturate(${1+.08*a})`;else if(type==='moody')x.filter=`contrast(${1+.4*a}) brightness(${1-.12*a})`;else if(type==='dramatic')x.filter=`contrast(${1+.6*a}) saturate(${1+.18*a}) brightness(${1-.08*a})`;
+if(['enhance','grey','bw','sepia','vintage','film','moody','dramatic'].includes(type)){x.drawImage(source,0,0,w,h);x.filter='none';return c}
+if(type==='pixels'){let b=Math.max(3,Math.round(3+24*a)),sw=Math.max(1,w/b),sh=Math.max(1,h/b),s=C(sw,sh),sx=s.getContext('2d');sx.imageSmoothingEnabled=false;sx.drawImage(source,0,0,sw,sh);x.clearRect(0,0,w,h);x.imageSmoothingEnabled=false;x.drawImage(s,0,0,w,h);x.imageSmoothingEnabled=true;return c}
+if(type==='bloom'){let b=C(w,h),bx=b.getContext('2d');bx.filter=`blur(${Math.max(3,18*a)}px) brightness(1.15)`;bx.drawImage(source,0,0,w,h);x.globalCompositeOperation='screen';x.globalAlpha=.65*a;x.drawImage(b,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';return c}
+if(type==='retro80'||type==='vhs'||type==='polaroid'){x.filter=`contrast(${1+.16*a}) saturate(${1+.15*a}) brightness(${1+.04*a})`;x.drawImage(source,0,0,w,h);x.filter='none';x.globalCompositeOperation='screen';x.globalAlpha=.12*a;x.fillStyle=type==='vhs'?'#ff244f':'#ef5b92';x.fillRect(0,0,w,h);x.fillStyle='#3260ff';x.fillRect(0,0,w,h);x.globalCompositeOperation='source-over';x.globalAlpha=1;grain(c,(type==='vhs'?1:.55)*a);vignette(c,.5*a);if(type==='vhs'){x.globalAlpha=.1*a;x.fillStyle='#fff';for(let y=0;y<h;y+=5)x.fillRect(0,y,w,1);x.globalAlpha=1}return c}
+if(type==='comic'||type==='sketch'){x.filter=`grayscale(${type==='sketch'?1:.15}) contrast(${1+.65*a}) saturate(${1+.5*a})`;x.drawImage(source,0,0,w,h);x.filter='none';grain(c,.12*a);return c}return c}
+function render(){if(!source)return;let [w,h]=workSize();canvas.width=w;canvas.height=h;ctx.drawImage(transform(currentFilter,w,h),0,0)}
+$("#downloadBtn").onclick=async()=>{let b=Math.min(1,Math.sqrt(30000000/(source.naturalWidth*source.naturalHeight))),w=Math.round(source.naturalWidth*b),h=Math.round(source.naturalHeight*b),o=transform(currentFilter,w,h);$("#downloadBtn").disabled=true;$("#downloadBtn").textContent='Processing…';o.toBlob(z=>{let a=document.createElement('a');a.href=URL.createObjectURL(z);a.download=`image-${currentFilter}.jpg`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);$("#downloadBtn").disabled=false;$("#downloadBtn").textContent='Download High Resolution'},'image/jpeg',.94)};
