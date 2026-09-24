@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b0d12">
+  <title>Image Filter Studio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand">Image Filter Studio</div>
+      <div class="tagline">Turn ordinary photos into something memorable.</div>
+    </div>
+    <button id="resetBtn" class="ghost" disabled>Reset</button>
+  </header>
+
+  <main>
+    <section id="dropZone" class="upload-card">
+      <input id="fileInput" type="file" accept="image/*" hidden>
+      <div class="upload-icon">＋</div>
+      <h1>Upload an image</h1>
+      <p>Drop a photo here or choose one from your device.</p>
+      <button id="chooseBtn" class="primary">Choose Image</button>
+      <small>JPG, PNG, WEBP • processed locally in your browser</small>
+    </section>
+
+    <section id="editor" class="editor hidden">
+      <div class="preview-card">
+        <div class="preview-head">
+          <span id="fileName">Image</span>
+          <span id="dimensions"></span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="canvas"></canvas>
+          <div id="emptyState" class="empty-state">Your filtered image will appear here</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="section-title">Filters</div>
+        <div id="filterGrid" class="filter-grid">
+          <button class="filter active" data-filter="original"><span>◉</span>Original</button>
+          <button class="filter" data-filter="enhance"><span>✦</span>Enhance</button>
+          <button class="filter" data-filter="bloom"><span>✺</span>Bloom</button>
+          <button class="filter" data-filter="grey"><span>◐</span>Grey</button>
+          <button class="filter" data-filter="bw"><span>◑</span>Black & White</button>
+          <button class="filter" data-filter="retro80"><span>▣</span>1980's</button>
+          <button class="filter" data-filter="pixels"><span>▦</span>Pixels</button>
+          <button class="filter" data-filter="vintage"><span>◌</span>Vintage</button>
+          <button class="filter" data-filter="sepia"><span>◍</span>Sepia</button>
+          <button class="filter" data-filter="warm"><span>☀</span>Warm</button>
+          <button class="filter" data-filter="cool"><span>❄</span>Cool</button>
+          <button class="filter" data-filter="dramatic"><span>◒</span>Dramatic</button>
+        </div>
+
+        <div class="section-title">Intensity</div>
+        <div class="slider-row">
+          <input id="intensity" type="range" min="0" max="100" value="100">
+          <output id="intensityValue">100%</output>
+        </div>
+
+        <div class="actions">
+          <button id="downloadBtn" class="primary" disabled>Download Image</button>
+          <button id="changeBtn" class="secondary">Change Image</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Free • No upload required • Runs locally</span>
+    <span>Built for Cloudflare Pages</span>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
