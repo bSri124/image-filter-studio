@@ -51,4 +51,3 @@ processBtn.addEventListener("click",async()=>{if(!image||busy||!multiSegmenter)r
 [depth,edge,preset].forEach(el=>el.addEventListener("input",async()=>{$("depthValue").textContent=depth.value+"%";const e=+edge.value;$('edgeValue').textContent=e>70?"High":e>40?"Medium":"Low";$('presetValue').textContent=preset.options[preset.selectedIndex].text;if(multiMask)await render()}));
 showMask.addEventListener("change",()=>multiMask&&render());
 downloadBtn.addEventListener("click",()=>{if(!finalCanvas)return;const a=document.createElement("a");a.download="portrait-draft.jpg";a.href=finalCanvas.toDataURL("image/jpeg",.94);a.click()});
-</script>
