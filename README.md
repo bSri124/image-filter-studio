@@ -1,14 +1,15 @@
-# Image Filter Studio V2
+# Portrait Mode Draft
 
-Static browser photo transformation app for Cloudflare Pages.
+Standalone draft for testing portrait segmentation and edge quality.
 
-### V2 changes
-- High-resolution photos are accepted.
-- Preview is downscaled only for speed.
-- Download processes the source image separately.
-- Large exports are capped at about 30 million pixels to protect mobile browser memory.
-- Pixel Art now uses visible pixel blocks.
-- 1980s Film combines color cast, grain, vignette and film-like processing.
-- Added VHS, Polaroid, Comic, Sketch and cinematic transformations.
+- MediaPipe SelfieMulticlass: hair, skin, clothes and accessories.
+- MediaPipe HairSegmenter: extra hair protection.
+- Soft alpha mask + light edge feathering.
+- Background-only depth blur.
+- Natural, Studio, Warm, Cool, Dramatic and B&W grades.
+- Edge Protection slider and mask preview.
+- Processing is local in the browser; no application server receives the photo.
 
-No backend is required; images stay in the browser.
+Stress-test: spiky hair, flyaways, long hair, spectacles/temples, earrings, headphones, objects beside the face, fingers and two-person photos.
+
+Official docs: https://developers.google.com/edge/mediapipe/solutions/vision/image_segmenter
