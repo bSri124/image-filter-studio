@@ -1,16 +1,19 @@
-# Portrait Mode Draft v3
+# Portrait Mode Draft v5
 
-This version fixes the Android upload path by using a real file input overlay instead of a hidden input/label click pattern.
+This version deliberately separates the two problems:
+1. Mobile image upload/preview.
+2. Portrait AI loading.
 
-It also lazy-loads the segmentation models only after a photo is selected, so photo selection is independent of model loading.
+The main page uses a classic JavaScript file with no module dependency, so selecting a photo must work even if the MediaPipe CDN is unavailable.
 
-## Deployment
-Upload the three files to Cloudflare Pages/Workers:
-- index.html
-- style.css
-- app.js
+After the photo is visible, tap **Load Portrait AI**. Only then does the browser import MediaPipe.
 
-The page intentionally shows **Draft v3** so you can verify that the new deployment is actually live and not a cached older build.
+MediaPipe Tasks Vision supports on-device image segmentation; the official package documentation describes Image Segmenter and states that input processing occurs on device. See:
+https://www.npmjs.com/package/@mediapipe/tasks-vision
 
-## Test first
-Use photos with flyaway hair, spiky hair, spectacles (including side-view arms), earrings/headphones, and objects immediately beside the face.
+Test order:
+1. Upload photo.
+2. Confirm the photo appears and PHOTO LOADED is shown.
+3. Tap Load Portrait AI.
+4. Tap Apply Portrait.
+5. Enable Show subject mask and inspect hair/glasses edges.

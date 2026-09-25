@@ -1,53 +1,128 @@
-import { FilesetResolver, ImageSegmenter } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs";
+/* v5: classic script on purpose. No module import runs before upload. */
+(function(){
+"use strict";
 
-const $=id=>document.getElementById(id);
-const fileInput=$("fileInput"),preview=$("preview"),pctx=preview.getContext("2d",{willReadFrequently:true}),status=$("status"),processBtn=$("process"),downloadBtn=$("download"),depth=$("depth"),edge=$("edge"),preset=$("preset"),showMask=$("showMask");
-const MULTI_MODEL="https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite";
-const HAIR_MODEL="https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/hair_segmenter.tflite";
-const WASM="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm";
-let image=null,working=null,finalCanvas=null,multiSegmenter=null,hairSegmenter=null,multiMask=null,busy=false,modelsLoading=false;
-const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
+var $=function(id){return document.getElementById(id)};
+var fileInput=$("fileInput"), preview=$("preview"), pctx=preview.getContext("2d");
+var status=$("status"), loadAI=$("loadAI"), processBtn=$("process"), downloadBtn=$("download");
+var depth=$("depth"), edge=$("edge"), preset=$("preset"), showMask=$("showMask");
+
+var image=null, working=null, finalCanvas=null, multiSegmenter=null, hairSegmenter=null, multiMask=null, busy=false;
+
 function setStatus(t){status.textContent=t}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function lerp(a,b,t){return a+(b-a)*t}
 
-async function initModels(){
-  if(multiSegmenter||modelsLoading)return;
-  modelsLoading=true; setStatus("Loading portrait model… first run may take a moment.");
-  try{
-    const vision=await FilesetResolver.forVisionTasks(WASM);
-    multiSegmenter=await ImageSegmenter.createFromOptions(vision,{baseOptions:{modelAssetPath:MULTI_MODEL},runningMode:"IMAGE",outputCategoryMask:true,outputConfidenceMasks:true});
-    hairSegmenter=await ImageSegmenter.createFromOptions(vision,{baseOptions:{modelAssetPath:HAIR_MODEL},runningMode:"IMAGE",outputCategoryMask:true,outputConfidenceMasks:true});
-    setStatus(image?"Model ready. Tap Apply Portrait.":"Portrait model ready. Choose a photo.");
-    if(image)processBtn.disabled=false;
-  }catch(e){console.error(e);setStatus("Could not load portrait model. Check internet and refresh.")}
-  finally{modelsLoading=false}
+function showImage(file){
+  setStatus("Opening photo…");
+  var reader=new FileReader();
+  reader.onload=function(){
+    var img=new Image();
+    img.onload=function(){
+      image=img;
+      var max=1400, s=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
+      working=document.createElement("canvas");
+      working.width=Math.max(1,Math.round(img.naturalWidth*s));
+      working.height=Math.max(1,Math.round(img.naturalHeight*s));
+      working.getContext("2d").drawImage(img,0,0,working.width,working.height);
+      preview.width=working.width; preview.height=working.height;
+      pctx.clearRect(0,0,preview.width,preview.height);
+      pctx.drawImage(working,0,0);
+      loadAI.disabled=false;
+      setStatus("PHOTO LOADED ✓  "+img.naturalWidth+" × "+img.naturalHeight);
+    };
+    img.onerror=function(){setStatus("Browser could not decode this image.")};
+    img.src=reader.result;
+  };
+  reader.onerror=function(){setStatus("Could not read the selected file.")};
+  reader.readAsDataURL(file);
 }
 
-function makeWorkingCanvas(){const max=1400,s=Math.min(1,max/Math.max(image.naturalWidth,image.naturalHeight)),c=document.createElement("canvas");c.width=Math.max(1,Math.round(image.naturalWidth*s));c.height=Math.max(1,Math.round(image.naturalHeight*s));c.getContext("2d").drawImage(image,0,0,c.width,c.height);return c}
-function readMask(m){return m?{w:m.width,h:m.height,a:new Float32Array(m.getAsFloat32Array())}:null}
-function buildForegroundMask(r,hr){const ms=r.confidenceMasks||[];if(ms.length<6)throw Error("Portrait confidence masks unavailable.");const m=ms.map(readMask),w=m[0].w,h=m[0].h,out=new Float32Array(w*h),ep=+edge.value/100,hm=hr?.confidenceMasks?.[0]?readMask(hr.confidenceMasks[0]):null;for(let i=0;i<out.length;i++){let v=Math.max(m[1].a[i],m[2].a[i],m[3].a[i],m[4].a[i],m[5].a[i]*lerp(1,1.16,ep));if(hm&&hm.w===w&&hm.h===h)v=Math.max(v,hm.a[i]*lerp(.98,1.12,ep));out[i]=clamp(v)}return{w,h,a:out}}
-function maskToCanvas(m){const c=document.createElement("canvas");c.width=m.w;c.height=m.h;const x=c.getContext("2d"),d=x.createImageData(m.w,m.h);for(let i=0;i<m.a.length;i++){const a=Math.round(m.a[i]*255);d.data[i*4]=255;d.data[i*4+1]=255;d.data[i*4+2]=255;d.data[i*4+3]=a}x.putImageData(d,0,0);return c}
-function resizeMask(c,w,h){const o=document.createElement("canvas");o.width=w;o.height=h;const x=o.getContext("2d");x.imageSmoothingEnabled=true;x.drawImage(c,0,0,w,h);return o}
-function refinedAlpha(c,w,h){const ep=+edge.value/100,b=lerp(2.4,.65,ep),o=document.createElement("canvas");o.width=w;o.height=h;const x=o.getContext("2d");x.filter=`blur(${b}px)`;x.drawImage(c,0,0,w,h);x.filter="none";const d=x.getImageData(0,0,w,h);for(let i=0;i<d.data.length;i+=4){const a=d.data[i+3]/255;d.data[i+3]=Math.round((a>.78?1:a)*255)}x.putImageData(d,0,0);return o}
-function blurBackground(src,w,h,blur){const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d"),passes=Math.max(1,Math.ceil(blur/16)),r=Math.min(16,blur/passes);x.filter=`blur(${r}px)`;for(let i=0;i<passes;i++)x.drawImage(src,0,0,w,h);x.filter="none";return c}
-function grade(c){const x=c.getContext("2d"),t=preset.value,temp=document.createElement("canvas");temp.width=c.width;temp.height=c.height;temp.getContext("2d").drawImage(c,0,0);x.filter=t==="natural"?"contrast(1.04) saturate(1.06) brightness(1.015)":t==="studio"?"contrast(1.02) saturate(1.02) brightness(1.05)":t==="warm"?"contrast(1.04) saturate(1.10) sepia(.10) brightness(1.02)":t==="cool"?"contrast(1.05) saturate(1.04) hue-rotate(-5deg) brightness(1.015)":t==="dramatic"?"contrast(1.18) saturate(1.08) brightness(.99)":"grayscale(1) contrast(1.10)";x.clearRect(0,0,c.width,c.height);x.drawImage(temp,0,0);x.filter="none"}
-async function render(){if(!working||!multiMask)return;const w=working.width,h=working.height,mask=resizeMask(maskToCanvas(multiMask),w,h),alpha=refinedAlpha(mask,w,h);if(showMask.checked){pctx.drawImage(working,0,0);const o=document.createElement("canvas");o.width=w;o.height=h;const x=o.getContext("2d");x.fillStyle="#26e6a1";x.globalAlpha=.4;x.fillRect(0,0,w,h);x.globalCompositeOperation="destination-in";x.drawImage(alpha,0,0);pctx.drawImage(o,0,0);finalCanvas=working;return}const d=+depth.value/100,bg=blurBackground(working,w,h,lerp(2,34,d)),fg=document.createElement("canvas");fg.width=w;fg.height=h;const f=fg.getContext("2d");f.drawImage(working,0,0);f.globalCompositeOperation="destination-in";f.drawImage(alpha,0,0);const out=document.createElement("canvas");out.width=w;out.height=h;const x=out.getContext("2d");x.drawImage(bg,0,0);x.drawImage(fg,0,0);grade(out);finalCanvas=out;pctx.clearRect(0,0,w,h);pctx.drawImage(out,0,0)}
-
-fileInput.addEventListener("change",async e=>{
-  const f=e.target.files?.[0]; if(!f)return;
-  setStatus("Opening photo…");
-  const url=URL.createObjectURL(f);
-  const img=new Image();
-  img.onload=async()=>{
-    URL.revokeObjectURL(url); image=img; working=makeWorkingCanvas(); preview.width=working.width;preview.height=working.height;pctx.drawImage(working,0,0);downloadBtn.disabled=true;
-    setStatus(`Photo loaded — ${img.naturalWidth}×${img.naturalHeight}.`);
-    await initModels();
-  };
-  img.onerror=()=>{URL.revokeObjectURL(url);setStatus("This image could not be opened by the browser.")};
-  img.src=url;
+fileInput.addEventListener("change",function(e){
+  var f=e.target.files && e.target.files[0];
+  if(f) showImage(f);
 });
 
-processBtn.addEventListener("click",async()=>{if(!image||busy||!multiSegmenter)return;busy=true;processBtn.disabled=true;downloadBtn.disabled=true;setStatus("Analyzing hair, face and accessory edges…");try{working=makeWorkingCanvas();preview.width=working.width;preview.height=working.height;const r=multiSegmenter.segment(working),hr=hairSegmenter.segment(working);multiMask=buildForegroundMask(r,hr);r.close();hr.close();await render();setStatus("Ready — stress-test hair spikes, glasses and nearby objects.");downloadBtn.disabled=false}catch(e){console.error(e);setStatus("Portrait processing failed: "+e.message)}finally{processBtn.disabled=false;busy=false}});
+loadAI.addEventListener("click",async function(){
+  if(!image)return;
+  loadAI.disabled=true;
+  setStatus("Loading Portrait AI library…");
+  try{
+    var mod=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm");
+    var vision=await mod.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm");
+    multiSegmenter=await mod.ImageSegmenter.createFromOptions(vision,{
+      baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite"},
+      runningMode:"IMAGE",outputCategoryMask:true,outputConfidenceMasks:true
+    });
+    hairSegmenter=await mod.ImageSegmenter.createFromOptions(vision,{
+      baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/hair_segmenter.tflite"},
+      runningMode:"IMAGE",outputCategoryMask:true,outputConfidenceMasks:true
+    });
+    processBtn.disabled=false;
+    setStatus("Portrait AI ready. Tap Apply Portrait.");
+  }catch(err){
+    console.error(err);
+    loadAI.disabled=false;
+    setStatus("AI load failed. PHOTO UPLOAD IS WORKING. Check browser console/network.");
+  }
+});
 
-[depth,edge,preset].forEach(el=>el.addEventListener("input",async()=>{$("depthValue").textContent=depth.value+"%";const e=+edge.value;$('edgeValue').textContent=e>70?"High":e>40?"Medium":"Low";$('presetValue').textContent=preset.options[preset.selectedIndex].text;if(multiMask)await render()}));
-showMask.addEventListener("change",()=>multiMask&&render());
-downloadBtn.addEventListener("click",()=>{if(!finalCanvas)return;const a=document.createElement("a");a.download="portrait-draft.jpg";a.href=finalCanvas.toDataURL("image/jpeg",.94);a.click()});
+function readMask(m){return m?{w:m.width,h:m.height,a:new Float32Array(m.getAsFloat32Array())}:null}
+function buildMask(r,hr){
+  var ms=r.confidenceMasks||[];
+  if(ms.length<6)throw Error("Expected 6 portrait classes, got "+ms.length);
+  var m=ms.map(readMask),w=m[0].w,h=m[0].h,out=new Float32Array(w*h),ep=+edge.value/100;
+  var hm=hr&&hr.confidenceMasks&&hr.confidenceMasks[0]?readMask(hr.confidenceMasks[0]):null;
+  for(var i=0;i<out.length;i++){
+    var v=Math.max(m[1].a[i],m[2].a[i],m[3].a[i],m[4].a[i],m[5].a[i]*lerp(1,1.16,ep));
+    if(hm&&hm.w===w&&hm.h===h)v=Math.max(v,hm.a[i]*lerp(.98,1.12,ep));
+    out[i]=clamp(v,0,1);
+  }
+  return {w:w,h:h,a:out};
+}
+function maskCanvas(m){
+  var c=document.createElement("canvas");c.width=m.w;c.height=m.h;
+  var x=c.getContext("2d"),d=x.createImageData(m.w,m.h);
+  for(var i=0;i<m.a.length;i++){var a=Math.round(m.a[i]*255);d.data[i*4]=255;d.data[i*4+1]=255;d.data[i*4+2]=255;d.data[i*4+3]=a}
+  x.putImageData(d,0,0);return c;
+}
+function refined(c,w,h){
+  var ep=+edge.value/100,b=lerp(2.4,.65,ep),o=document.createElement("canvas");o.width=w;o.height=h;
+  var x=o.getContext("2d");x.filter="blur("+b+"px)";x.drawImage(c,0,0,w,h);x.filter="none";
+  var d=x.getImageData(0,0,w,h);for(var i=0;i<d.data.length;i+=4){var a=d.data[i+3]/255;d.data[i+3]=Math.round((a>.78?1:a)*255)}
+  x.putImageData(d,0,0);return o;
+}
+function bgBlur(src,w,h,amount){
+  var c=document.createElement("canvas");c.width=w;c.height=h;var x=c.getContext("2d");
+  var passes=Math.max(1,Math.ceil(amount/16)),r=Math.min(16,amount/passes);x.filter="blur("+r+"px)";
+  for(var i=0;i<passes;i++)x.drawImage(src,0,0,w,h);x.filter="none";return c;
+}
+function render(){
+  if(!working||!multiMask)return;
+  var w=working.width,h=working.height,alpha=refined(maskCanvas(multiMask),w,h);
+  if(showMask.checked){
+    pctx.drawImage(working,0,0);var o=document.createElement("canvas");o.width=w;o.height=h;
+    var x=o.getContext("2d");x.fillStyle="#26e6a1";x.globalAlpha=.4;x.fillRect(0,0,w,h);x.globalCompositeOperation="destination-in";x.drawImage(alpha,0,0);pctx.drawImage(o,0,0);finalCanvas=working;return;
+  }
+  var bg=bgBlur(working,w,h,lerp(2,34,+depth.value/100)),fg=document.createElement("canvas");fg.width=w;fg.height=h;
+  var f=fg.getContext("2d");f.drawImage(working,0,0);f.globalCompositeOperation="destination-in";f.drawImage(alpha,0,0);
+  var out=document.createElement("canvas");out.width=w;out.height=h;var x=out.getContext("2d");x.drawImage(bg,0,0);x.drawImage(fg,0,0);
+  finalCanvas=out;pctx.clearRect(0,0,w,h);pctx.drawImage(out,0,0);
+}
+processBtn.addEventListener("click",function(){
+  if(!image||!multiSegmenter||busy)return;busy=true;processBtn.disabled=true;
+  setStatus("Analyzing hair, face and accessory edges…");
+  try{
+    var r=multiSegmenter.segment(working),hr=hairSegmenter.segment(working);multiMask=buildMask(r,hr);
+    if(r.close)r.close();if(hr.close)hr.close();render();downloadBtn.disabled=false;setStatus("Ready — test hair spikes, glasses and nearby objects.");
+  }catch(e){console.error(e);setStatus("Portrait processing failed: "+e.message)}
+  finally{processBtn.disabled=false;busy=false}
+});
+[depth,edge,preset].forEach(function(el){el.addEventListener("input",function(){
+  $("depthValue").textContent=depth.value+"%";var e=+edge.value;$("edgeValue").textContent=e>70?"High":e>40?"Medium":"Low";$("presetValue").textContent=preset.options[preset.selectedIndex].text;
+  if(multiMask)render();
+})});
+showMask.addEventListener("change",function(){if(multiMask)render()});
+downloadBtn.addEventListener("click",function(){if(!finalCanvas)return;var a=document.createElement("a");a.download="portrait-draft-v5.jpg";a.href=finalCanvas.toDataURL("image/jpeg",.94);a.click()});
+setStatus("Choose a photo to begin.");
+})();

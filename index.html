@@ -3,23 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Portrait Mode — Draft v3</title>
-<link rel="stylesheet" href="style.css?v=20260925-3">
+<title>Portrait Mode Draft v5</title>
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <main class="app">
 <header>
   <div class="eyebrow">IMAGE FILTER STUDIO</div>
-  <h1>Portrait Mode <span>Draft v3</span></h1>
-  <p>Local subject segmentation + edge-protected depth blur.</p>
+  <h1>Portrait Mode <span>Draft v5</span></h1>
+  <p>First validate upload + preview. AI loads only after the photo is visible.</p>
 </header>
 
 <section class="card">
-  <div class="file-picker">
-    <div class="picker-title">Choose a photo</div>
-    <div class="picker-sub">Tap here to open Gallery / Files</div>
-    <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif">
+  <div class="picker">
+    <input id="fileInput" type="file" accept="image/*">
+    <div class="picker-content">
+      <strong>Choose a photo</strong>
+      <span>Tap here to open Gallery / Files</span>
+    </div>
   </div>
 
   <div class="preview-wrap">
@@ -36,7 +37,7 @@
         <option value="warm">Warm</option>
         <option value="cool">Cool</option>
         <option value="dramatic">Dramatic</option>
-        <option value="bw">B&amp;W</option>
+        <option value="bw">B&W</option>
       </select>
     </div>
     <div class="control">
@@ -46,27 +47,23 @@
     <div class="control">
       <div class="row"><b>Edge protection</b><span id="edgeValue">High</span></div>
       <input id="edge" type="range" min="0" max="100" value="82">
-      <small>Higher values protect fine hair, glasses and nearby details.</small>
+      <small>Higher values protect hair, glasses and nearby details.</small>
     </div>
     <label class="check"><input id="showMask" type="checkbox"> Show subject mask</label>
   </div>
 
   <div class="actions">
-    <button id="process" class="primary" disabled>Apply Portrait</button>
-    <button id="download" disabled>Download Image</button>
+    <button id="loadAI" class="primary" disabled>Load Portrait AI</button>
+    <button id="process" disabled>Apply Portrait</button>
+    <button id="download" disabled>Download</button>
   </div>
 </section>
 
 <section class="notes">
-  <b>Edge-quality test</b>
-  <ul>
-    <li>Flyaway / spiky hair</li>
-    <li>Spectacles and thin side arms</li>
-    <li>Earrings, headphones and objects beside the face</li>
-    <li>Fingers and small gaps around the body</li>
-  </ul>
+  <b>v5 diagnostic</b>
+  <p>Upload is deliberately independent from the AI library. If the photo appears here, the mobile picker and image pipeline are working.</p>
 </section>
 </main>
-<script type="module" src="app.js?v=20260925-3"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
