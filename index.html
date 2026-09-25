@@ -1,1 +1,72 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Portrait Mode — Draft</title><link rel="stylesheet" href="style.css"></head><body><main class="app"><header><div class="eyebrow">IMAGE FILTER STUDIO</div><h1>Portrait Mode <span>Draft</span></h1><p>Local subject segmentation + edge-protected depth blur.</p></header><section class="card"><label class="upload"><input id="fileInput" type="file" accept="image/*"><span>Choose a photo</span></label><div class="preview-wrap"><canvas id="preview"></canvas><div id="status" class="status">Choose a photo to begin.</div></div><div class="controls"><div class="control"><div class="row"><b>Portrait</b><span id="presetValue">Natural</span></div><select id="preset"><option value="natural">Natural</option><option value="studio">Studio</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="dramatic">Dramatic</option><option value="bw">B&amp;W</option></select></div><div class="control"><div class="row"><b>Depth</b><span id="depthValue">45%</span></div><input id="depth" type="range" min="0" max="100" value="45"></div><div class="control"><div class="row"><b>Edge protection</b><span id="edgeValue">High</span></div><input id="edge" type="range" min="0" max="100" value="82"><small>Higher values protect fine hair, glasses and nearby details.</small></div><label class="check"><input id="showMask" type="checkbox"> Show subject mask</label></div><div class="actions"><button id="process" class="primary" disabled>Apply Portrait</button><button id="download" disabled>Download Image</button></div></section><section class="notes"><b>Draft quality checks</b><ul><li>Hair is reinforced with a second segmentation pass.</li><li>Accessories are included by the multiclass person model.</li><li>Subject pixels stay sharp; blur is composited behind the subject.</li><li>Stress-test close-up hair, glasses and objects beside the face.</li></ul></section></main><script type="module" src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Portrait Mode — Draft v3</title>
+<link rel="stylesheet" href="style.css?v=20260925-3">
+</head>
+<body>
+<main class="app">
+<header>
+  <div class="eyebrow">IMAGE FILTER STUDIO</div>
+  <h1>Portrait Mode <span>Draft v3</span></h1>
+  <p>Local subject segmentation + edge-protected depth blur.</p>
+</header>
+
+<section class="card">
+  <div class="file-picker">
+    <div class="picker-title">Choose a photo</div>
+    <div class="picker-sub">Tap here to open Gallery / Files</div>
+    <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif">
+  </div>
+
+  <div class="preview-wrap">
+    <canvas id="preview"></canvas>
+    <div id="status" class="status">Choose a photo to begin.</div>
+  </div>
+
+  <div class="controls">
+    <div class="control">
+      <div class="row"><b>Portrait</b><span id="presetValue">Natural</span></div>
+      <select id="preset">
+        <option value="natural">Natural</option>
+        <option value="studio">Studio</option>
+        <option value="warm">Warm</option>
+        <option value="cool">Cool</option>
+        <option value="dramatic">Dramatic</option>
+        <option value="bw">B&amp;W</option>
+      </select>
+    </div>
+    <div class="control">
+      <div class="row"><b>Depth</b><span id="depthValue">45%</span></div>
+      <input id="depth" type="range" min="0" max="100" value="45">
+    </div>
+    <div class="control">
+      <div class="row"><b>Edge protection</b><span id="edgeValue">High</span></div>
+      <input id="edge" type="range" min="0" max="100" value="82">
+      <small>Higher values protect fine hair, glasses and nearby details.</small>
+    </div>
+    <label class="check"><input id="showMask" type="checkbox"> Show subject mask</label>
+  </div>
+
+  <div class="actions">
+    <button id="process" class="primary" disabled>Apply Portrait</button>
+    <button id="download" disabled>Download Image</button>
+  </div>
+</section>
+
+<section class="notes">
+  <b>Edge-quality test</b>
+  <ul>
+    <li>Flyaway / spiky hair</li>
+    <li>Spectacles and thin side arms</li>
+    <li>Earrings, headphones and objects beside the face</li>
+    <li>Fingers and small gaps around the body</li>
+  </ul>
+</section>
+</main>
+<script type="module" src="app.js?v=20260925-3"></script>
+</body>
+</html>

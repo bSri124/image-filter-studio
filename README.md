@@ -1,15 +1,16 @@
-# Portrait Mode Draft
+# Portrait Mode Draft v3
 
-Standalone draft for testing portrait segmentation and edge quality.
+This version fixes the Android upload path by using a real file input overlay instead of a hidden input/label click pattern.
 
-- MediaPipe SelfieMulticlass: hair, skin, clothes and accessories.
-- MediaPipe HairSegmenter: extra hair protection.
-- Soft alpha mask + light edge feathering.
-- Background-only depth blur.
-- Natural, Studio, Warm, Cool, Dramatic and B&W grades.
-- Edge Protection slider and mask preview.
-- Processing is local in the browser; no application server receives the photo.
+It also lazy-loads the segmentation models only after a photo is selected, so photo selection is independent of model loading.
 
-Stress-test: spiky hair, flyaways, long hair, spectacles/temples, earrings, headphones, objects beside the face, fingers and two-person photos.
+## Deployment
+Upload the three files to Cloudflare Pages/Workers:
+- index.html
+- style.css
+- app.js
 
-Official docs: https://developers.google.com/edge/mediapipe/solutions/vision/image_segmenter
+The page intentionally shows **Draft v3** so you can verify that the new deployment is actually live and not a cached older build.
+
+## Test first
+Use photos with flyaway hair, spiky hair, spectacles (including side-view arms), earrings/headphones, and objects immediately beside the face.
