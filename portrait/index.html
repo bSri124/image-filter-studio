@@ -1,14 +1,55 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Portrait Mode AI V5</title><link rel="stylesheet" href="portrait.css"></head>
-<body><main class="card">
-<header><h1>Portrait Mode <span>AI V5</span></h1><p>Segmentation + monocular depth for a natural distance-based blur.</p></header>
-<label class="file-box"><input id="portraitFile" type="file" accept="image/*"><div><strong>Choose a photo</strong><small>Tap to open Gallery / Files</small></div></label>
-<div class="preview"><canvas id="canvas"></canvas><div id="status">Choose a photo to begin.</div></div>
-<section class="panel"><div class="row"><b>Depth strength</b><span id="depthValue">70%</span></div><input id="depth" type="range" min="0" max="100" value="70"></section>
-<section class="panel"><div class="row"><b>Edge protection</b><span id="edgeValue">High</span></div><input id="edge" type="range" min="0" max="100" value="85"></section>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Portrait Mode AI V7</title>
+<link rel="stylesheet" href="portrait.css">
+</head>
+<body>
+<main class="card">
+<header>
+  <h1>Portrait Mode <span>AI V7</span></h1>
+  <p>Natural depth blur with fine-edge protection. Processing stays in your browser.</p>
+</header>
+
+<label class="file-box">
+  <input id="portraitFile" type="file" accept="image/*">
+  <div><strong>Choose a photo</strong><small>Tap to open Gallery / Files</small></div>
+</label>
+
+<div class="preview">
+  <canvas id="canvas"></canvas>
+  <div id="status">Choose a photo to begin.</div>
+</div>
+
+<section class="panel">
+  <div class="row"><b>Depth strength</b><span id="depthValue">70%</span></div>
+  <input id="depth" type="range" min="0" max="100" value="70">
+</section>
+
+<section class="panel">
+  <div class="row"><b>Edge protection</b><span id="edgeValue">High</span></div>
+  <input id="edge" type="range" min="0" max="100" value="85">
+  <small class="hint">High protection keeps fine hair, spectacles and nearby objects cleaner.</small>
+</section>
+
 <label class="check"><input id="depthAI" type="checkbox" checked> Natural distance-based depth</label>
 <label class="check"><input id="showMask" type="checkbox"> Show subject mask (diagnostic)</label>
-<div class="buttons"><button id="load" disabled>Load Portrait AI</button><button id="apply" disabled>Apply Portrait</button><button id="download" disabled>Download</button></div>
-<section class="diagnostic"><b>AI diagnostics</b><ol id="diag"><li>Waiting for photo.</li></ol></section>
-<p class="note">V5 uses person segmentation plus Depth Anything V2 Small for relative depth. The first depth-model load downloads and caches the model; inference stays in the browser. Relative depth gives near/far ordering, not exact meters.</p>
-</main><script type="module" src="portrait-upload.js"></script></body></html>
+
+<div class="buttons">
+  <button id="load">Load Portrait AI</button>
+  <button id="apply" disabled>Apply Portrait</button>
+  <button id="download" disabled>Download</button>
+</div>
+
+<section class="diagnostic">
+  <b>AI diagnostics</b>
+  <ol id="diag"><li>Waiting for photo.</li></ol>
+</section>
+
+<p class="note">Depth AI is attempted automatically. If the depth model cannot be downloaded, the app switches to a conservative local fallback instead of failing. Photos are processed locally after selection.</p>
+</main>
+<script type="module" src="portrait-upload.js"></script>
+</body>
+</html>

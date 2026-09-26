@@ -1,225 +1,458 @@
-let segmenter = null, loading = null;
-let depthEstimator = null, depthLoading = null;
-const MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
-const CDNS = [
+// Portrait AI V7
+// - MediaPipe Selfie Segmenter for the subject mask.
+// - Depth Anything V2 Small (when available) for monocular relative depth.
+// - A deterministic local fallback keeps the portrait effect usable when the
+//   depth model cannot be downloaded or initialized.
+// - All actual image processing happens in the browser; uploaded photos are
+//   never sent to a server by this module.
+
+let segmenter = null;
+let segmenterLoading = null;
+let depthEstimator = null;
+let depthLoading = null;
+
+const SEGMENTATION_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
+const MEDIAPIPE_CDNS = [
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs',
   'https://unpkg.com/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs'
 ];
-const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm';
-const TRANSFORMERS = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
-const DEPTH_MODEL = 'onnx-community/depth-anything-v2-small';
+const MEDIAPIPE_WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm';
+const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm';
+
+// V2 is the preferred model. V1 small is a smaller fallback. The q4/q4f16
+// variants are substantially lighter for phones than the full model.
+const DEPTH_MODELS = [
+  { id: 'onnx-community/depth-anything-v2-small', dtype: 'q4f16' },
+  { id: 'onnx-community/depth-anything-v2-small', dtype: 'q4' },
+  { id: 'Xenova/depth-anything-small-hf', dtype: 'q8' }
+];
+
+function clamp(v, a = 0, b = 1) {
+  return Math.max(a, Math.min(b, v));
+}
+
+function smoothstep(a, b, x) {
+  const t = clamp((x - a) / Math.max(1e-6, b - a));
+  return t * t * (3 - 2 * t);
+}
 
 export async function loadPortraitAI(report) {
   if (segmenter) return segmenter;
-  if (loading) return loading;
-  loading = (async () => {
-    let vision = null, last = null;
-    for (const url of CDNS) {
+  if (segmenterLoading) return segmenterLoading;
+
+  segmenterLoading = (async () => {
+    let vision = null;
+    let lastError = null;
+
+    for (const url of MEDIAPIPE_CDNS) {
       try {
         report('Loading MediaPipe runtime…', null, url);
         vision = await import(url);
         report('MediaPipe runtime loaded ✓', true);
         break;
       } catch (e) {
-        last = e;
-        report('Runtime attempt failed', false, e?.message || String(e));
+        lastError = e;
+        report('MediaPipe runtime attempt failed', false, e?.message || String(e));
       }
     }
-    if (!vision) throw last || new Error('No runtime CDN could be loaded');
+
+    if (!vision) throw lastError || new Error('MediaPipe runtime could not be loaded');
 
     const { FilesetResolver, ImageSegmenter } = vision;
-    report('Loading MediaPipe WASM…', null, WASM);
-    const fs = await FilesetResolver.forVisionTasks(WASM);
+    report('Loading MediaPipe WASM…', null, MEDIAPIPE_WASM);
+    const fs = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM);
     report('MediaPipe WASM loaded ✓', true);
-    report('Loading person segmentation model…', null, MODEL);
-    const response = await fetch(MODEL, { mode: 'cors', cache: 'force-cache' });
-    if (!response.ok) throw new Error(`Model HTTP ${response.status}`);
-    report('Segmentation model reachable ✓', true, `${Math.round((+response.headers.get('content-length') || 0) / 1024)} KB reported`);
 
-    const options = { baseOptions: { modelAssetPath: MODEL }, runningMode: 'IMAGE', outputCategoryMask: true, outputConfidenceMasks: true };
+    report('Loading person segmentation model…', null, SEGMENTATION_MODEL);
+    const response = await fetch(SEGMENTATION_MODEL, { mode: 'cors', cache: 'force-cache' });
+    if (!response.ok) throw new Error(`Segmentation model HTTP ${response.status}`);
+    report('Segmentation model reachable ✓', true);
+
+    const common = {
+      baseOptions: { modelAssetPath: SEGMENTATION_MODEL },
+      runningMode: 'IMAGE',
+      outputCategoryMask: true,
+      outputConfidenceMasks: true
+    };
+
     try {
       report('Initializing CPU ImageSegmenter…');
-      segmenter = await ImageSegmenter.createFromOptions(fs, { ...options, baseOptions: { modelAssetPath: MODEL, delegate: 'CPU' } });
+      segmenter = await ImageSegmenter.createFromOptions(fs, {
+        ...common,
+        baseOptions: { modelAssetPath: SEGMENTATION_MODEL, delegate: 'CPU' }
+      });
       report('CPU ImageSegmenter ready ✓', true);
-    } catch (cpuErr) {
-      report('CPU ImageSegmenter failed', false, cpuErr?.message || String(cpuErr));
+    } catch (cpuError) {
+      report('CPU ImageSegmenter failed', false, cpuError?.message || String(cpuError));
       report('Trying GPU ImageSegmenter…');
-      segmenter = await ImageSegmenter.createFromOptions(fs, { ...options, baseOptions: { modelAssetPath: MODEL, delegate: 'GPU' } });
+      segmenter = await ImageSegmenter.createFromOptions(fs, {
+        ...common,
+        baseOptions: { modelAssetPath: SEGMENTATION_MODEL, delegate: 'GPU' }
+      });
       report('GPU ImageSegmenter ready ✓', true);
     }
+
     return segmenter;
   })();
-  try { return await loading; } catch (e) { loading = null; throw e; }
+
+  try {
+    return await segmenterLoading;
+  } catch (e) {
+    segmenterLoading = null;
+    throw e;
+  }
 }
 
 export async function loadDepthAI(report) {
   if (depthEstimator) return depthEstimator;
   if (depthLoading) return depthLoading;
+
   depthLoading = (async () => {
-    report('Loading Depth AI runtime…', null, TRANSFORMERS);
-    const mod = await import(TRANSFORMERS);
+    report('Loading Depth AI runtime…', null, TRANSFORMERS_URL);
+    const mod = await import(TRANSFORMERS_URL);
+    const { pipeline, env } = mod;
+
+    // Explicitly keep the browser cache enabled. Once a model is cached,
+    // subsequent edits do not download the weights again.
+    if (env) {
+      env.allowRemoteModels = true;
+      env.useBrowserCache = true;
+      env.useWasmCache = true;
+    }
     report('Depth AI runtime loaded ✓', true);
-    report('Loading Depth Anything V2 Small…', null, DEPTH_MODEL);
-    depthEstimator = await mod.pipeline('depth-estimation', DEPTH_MODEL, { device: 'wasm', dtype: 'q8' });
-    report('Depth AI ready ✓', true, 'Relative depth model cached in browser');
-    return depthEstimator;
+
+    let lastError = null;
+    for (const candidate of DEPTH_MODELS) {
+      try {
+        report('Loading depth model…', null, `${candidate.id} (${candidate.dtype})`);
+        const options = {
+          device: 'wasm',
+          dtype: candidate.dtype
+        };
+        depthEstimator = await pipeline('depth-estimation', candidate.id, options);
+        report('Depth AI ready ✓', true, `${candidate.id} / ${candidate.dtype}`);
+        return depthEstimator;
+      } catch (e) {
+        lastError = e;
+        report('Depth model unavailable — continuing safely', false, `${candidate.id}: ${e?.message || String(e)}`);
+      }
+    }
+
+    throw lastError || new Error('No browser-compatible depth model could be loaded');
   })();
-  try { return await depthLoading; } catch (e) { depthLoading = null; throw e; }
-}
 
-function maskFromConfidence(m, edgeProtection) {
-  const v = m.getAsFloat32Array();
-  const c = document.createElement('canvas'); c.width = m.width; c.height = m.height;
-  const x = c.getContext('2d', { willReadFrequently: true });
-  const im = x.createImageData(m.width, m.height);
-  const t = Math.max(0.16, 0.50 - edgeProtection * 0.0024);
-  for (let i = 0, p = 0; i < v.length; i++, p += 4) {
-    const q = Math.max(0, Math.min(1, (v[i] - t) / Math.max(0.10, 1 - t)));
-    im.data[p] = im.data[p + 1] = im.data[p + 2] = 255;
-    im.data[p + 3] = Math.round(q * 255);
+  try {
+    return await depthLoading;
+  } catch (e) {
+    depthLoading = null;
+    throw e;
   }
-  x.putImageData(im, 0, 0); return c;
-}
-function maskFromCategory(m) {
-  const v = m.getAsUint8Array();
-  const c = document.createElement('canvas'); c.width = m.width; c.height = m.height;
-  const x = c.getContext('2d'); const im = x.createImageData(m.width, m.height);
-  for (let i = 0, p = 0; i < v.length; i++, p += 4) { const a = v[i] > 0 ? 255 : 0; im.data[p] = im.data[p + 1] = im.data[p + 2] = 255; im.data[p + 3] = a; }
-  x.putImageData(im, 0, 0); return c;
-}
-function makeMask(source, edgeProtection) {
-  const r = segmenter.segment(source);
-  if (r.confidenceMasks?.length) return maskFromConfidence(r.confidenceMasks[0], edgeProtection);
-  if (r.categoryMask) return maskFromCategory(r.categoryMask);
-  throw Error('No confidence or category mask returned');
 }
 
-function blur(s, r) {
-  const c = document.createElement('canvas'); c.width = s.width; c.height = s.height;
-  const x = c.getContext('2d'); x.filter = `blur(${r}px)`; x.drawImage(s, 0, 0); x.filter = 'none'; return c;
+function confidenceMaskToCanvas(mask, edgeProtection) {
+  const values = mask.getAsFloat32Array();
+  const c = document.createElement('canvas');
+  c.width = mask.width;
+  c.height = mask.height;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  const image = x.createImageData(mask.width, mask.height);
+
+  // High edge protection deliberately keeps the uncertain fringe instead of
+  // hard-thresholding hair/glasses/handheld objects away.
+  const threshold = 0.48 - edgeProtection * 0.0022;
+  const softness = 0.16 + edgeProtection * 0.0012;
+
+  for (let i = 0, p = 0; i < values.length; i++, p += 4) {
+    const a = smoothstep(threshold - softness, threshold + softness, values[i]);
+    image.data[p] = 255;
+    image.data[p + 1] = 255;
+    image.data[p + 2] = 255;
+    image.data[p + 3] = Math.round(a * 255);
+  }
+
+  x.putImageData(image, 0, 0);
+  return c;
 }
-function soft(m, e) {
-  const c = document.createElement('canvas'); c.width = m.width; c.height = m.height;
-  const x = c.getContext('2d'); x.filter = `blur(${Math.max(.3, (100 - e) * .018 + .3)}px)`; x.drawImage(m, 0, 0); x.filter = 'none'; return c;
+
+function categoryMaskToCanvas(mask) {
+  const values = mask.getAsUint8Array();
+  const c = document.createElement('canvas');
+  c.width = mask.width;
+  c.height = mask.height;
+  const x = c.getContext('2d');
+  const image = x.createImageData(mask.width, mask.height);
+  for (let i = 0, p = 0; i < values.length; i++, p += 4) {
+    const a = values[i] > 0 ? 255 : 0;
+    image.data[p] = image.data[p + 1] = image.data[p + 2] = 255;
+    image.data[p + 3] = a;
+  }
+  x.putImageData(image, 0, 0);
+  return c;
+}
+
+function makeMask(source, edgeProtection) {
+  const result = segmenter.segment(source);
+  if (result.confidenceMasks?.length) return confidenceMaskToCanvas(result.confidenceMasks[0], edgeProtection);
+  if (result.categoryMask) return categoryMaskToCanvas(result.categoryMask);
+  throw new Error('No segmentation mask returned');
+}
+
+function featherMask(mask, edgeProtection) {
+  const c = document.createElement('canvas');
+  c.width = mask.width;
+  c.height = mask.height;
+  const x = c.getContext('2d');
+  const radius = 0.45 + (100 - edgeProtection) * 0.012;
+  x.filter = `blur(${radius}px)`;
+  x.drawImage(mask, 0, 0);
+  x.filter = 'none';
+  return c;
+}
+
+function blur(source, radius) {
+  if (radius <= 0.01) return source;
+  const c = document.createElement('canvas');
+  c.width = source.width;
+  c.height = source.height;
+  const x = c.getContext('2d');
+  x.filter = `blur(${radius.toFixed(2)}px)`;
+  x.drawImage(source, 0, 0);
+  x.filter = 'none';
+  return c;
 }
 
 async function getDepthMap(source, report) {
   const estimator = await loadDepthAI(report);
+  // Transformers.js explicitly supports HTMLCanvasElement as ImageInput.
   const output = await estimator(source);
-  const t = output?.predicted_depth;
-  if (!t?.data || !t?.dims) throw new Error('Depth AI returned no predicted depth map');
-  const dims = t.dims;
-  const h = dims[dims.length - 2], w = dims[dims.length - 1];
-  const vals = t.data;
-  let min = Infinity, max = -Infinity;
-  for (let i = 0; i < vals.length; i++) { const z = vals[i]; if (z < min) min = z; if (z > max) max = z; }
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const x = c.getContext('2d', { willReadFrequently: true }); const im = x.createImageData(w, h);
-  const span = Math.max(1e-6, max - min);
-  for (let i = 0, p = 0; i < vals.length; i++, p += 4) {
-    const near = Math.max(0, Math.min(1, (vals[i] - min) / span));
-    const g = Math.round(near * 255); im.data[p] = im.data[p + 1] = im.data[p + 2] = g; im.data[p + 3] = 255;
+  const tensor = output?.predicted_depth;
+  if (!tensor?.data || !tensor?.dims) throw new Error('Depth AI returned no predicted depth map');
+
+  const dims = tensor.dims;
+  const h = dims[dims.length - 2];
+  const w = dims[dims.length - 1];
+  const values = tensor.data;
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < values.length; i++) {
+    const z = Number(values[i]);
+    if (Number.isFinite(z)) {
+      min = Math.min(min, z);
+      max = Math.max(max, z);
+    }
   }
-  x.putImageData(im, 0, 0);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+    throw new Error('Depth AI returned an invalid depth range');
+  }
+
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  const image = x.createImageData(w, h);
+  const span = max - min;
+  for (let i = 0, p = 0; i < values.length; i++, p += 4) {
+    const near = clamp((Number(values[i]) - min) / span);
+    const g = Math.round(near * 255);
+    image.data[p] = image.data[p + 1] = image.data[p + 2] = g;
+    image.data[p + 3] = 255;
+  }
+  x.putImageData(image, 0, 0);
   return c;
 }
 
-function makeDepthBlurLayers(source, depthMap, strength) {
-  // Depth Anything gives relative depth, not meters. We use it only to create a smooth
-  // foreground-to-background blur falloff, which is what a portrait camera effect needs.
-  const W = source.width, H = source.height;
-  const d = document.createElement('canvas'); d.width = W; d.height = H;
-  const dx = d.getContext('2d', { willReadFrequently: true }); dx.drawImage(depthMap, 0, 0, W, H);
-  const pix = dx.getImageData(0, 0, W, H).data;
-  const map = new Float32Array(W * H);
-  for (let i = 0; i < map.length; i++) map[i] = pix[i * 4] / 255;
+function makeHeuristicDepth(source, mask) {
+  // Safe fallback: this is not AI depth. It uses the subject silhouette and
+  // image geometry to create a restrained near/far gradient, avoiding the
+  // harsh cut-out look when a remote depth model is unavailable.
+  const W = source.width;
+  const H = source.height;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  const image = x.createImageData(W, H);
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = W;
+  maskCanvas.height = H;
+  const mx = maskCanvas.getContext('2d', { willReadFrequently: true });
+  mx.drawImage(mask, 0, 0, W, H);
+  const mp = mx.getImageData(0, 0, W, H).data;
 
-  const maxR = Math.min(22, 2 + strength * 0.22);
-  const layers = [0, .30, .58, .82, 1];
-  const canvases = layers.map(f => blur(source, maxR * f));
-  return { map, canvases, W, H };
+  // Estimate subject bounds from the mask. The lower part of a portrait is
+  // generally nearer than the distant upper background, but the effect is
+  // deliberately weak and is never allowed to create a hard depth boundary.
+  let minY = H, maxY = -1;
+  for (let y = 0; y < H; y += 3) {
+    for (let xPos = 0; xPos < W; xPos += 3) {
+      if (mp[(y * W + xPos) * 4 + 3] > 150) {
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+  if (maxY < 0) { minY = H * 0.2; maxY = H * 0.8; }
+  const subjectHeight = Math.max(1, maxY - minY);
+
+  for (let y = 0; y < H; y++) {
+    const verticalFar = clamp((y - minY) / subjectHeight);
+    const upperFar = clamp((minY - y) / H);
+    const near = clamp(0.72 - upperFar * 0.55 + verticalFar * 0.18);
+    const g = Math.round(near * 255);
+    for (let xPos = 0; xPos < W; xPos++) {
+      const p = (y * W + xPos) * 4;
+      image.data[p] = image.data[p + 1] = image.data[p + 2] = g;
+      image.data[p + 3] = 255;
+    }
+  }
+  x.putImageData(image, 0, 0);
+  return c;
 }
 
-function compositeDepth(outCtx, depth, mask, layers) {
-  const { map, canvases, W, H } = layers;
-  // Start with the least blurred layer. Farther pixels receive progressively stronger blur.
-  const base = canvases[0]; outCtx.drawImage(base, 0, 0);
-  const thresholds = [0.20, 0.40, 0.60, 0.78];
-  for (let band = 1; band < canvases.length; band++) {
-    const low = band === 1 ? thresholds[0] : thresholds[band - 1];
-    const high = band < thresholds.length ? thresholds[band] : 1.0;
-    const bandMask = document.createElement('canvas'); bandMask.width = W; bandMask.height = H;
-    const bx = bandMask.getContext('2d'); const bi = bx.createImageData(W, H);
-    const mp = mask.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
-    for (let i = 0, p = 0; i < map.length; i++, p += 4) {
-      // Depth values near 1 are closer. Blur should increase toward lower values.
-      const far = 1 - map[i];
-      const a = mp[p + 3] / 255;
-      let q = 0;
-      if (far > low && far <= high) q = Math.min(1, (far - low) / Math.max(0.05, high - low));
+function buildDepthBlur(source, depthMap, subjectMask, strength) {
+  const W = source.width;
+  const H = source.height;
+  const depthCanvas = document.createElement('canvas');
+  depthCanvas.width = W;
+  depthCanvas.height = H;
+  const dx = depthCanvas.getContext('2d', { willReadFrequently: true });
+  dx.drawImage(depthMap, 0, 0, W, H);
+  const depthPixels = dx.getImageData(0, 0, W, H).data;
+
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = W;
+  maskCanvas.height = H;
+  const mx = maskCanvas.getContext('2d', { willReadFrequently: true });
+  mx.drawImage(subjectMask, 0, 0, W, H);
+  const maskPixels = mx.getImageData(0, 0, W, H).data;
+
+  // Five levels give a smooth transition without expensive per-pixel blur.
+  const maxRadius = Math.min(26, 2 + strength * 0.24);
+  const radii = [0, maxRadius * 0.16, maxRadius * 0.34, maxRadius * 0.62, maxRadius];
+  const layers = radii.map(r => blur(source, r));
+
+  const output = document.createElement('canvas');
+  output.width = W;
+  output.height = H;
+  const out = output.getContext('2d');
+  out.drawImage(layers[layers.length - 1], 0, 0); // far background first
+
+  // Overlay progressively sharper layers according to relative depth.
+  // Depth Anything's normalized high values are treated as nearer.
+  for (let layer = layers.length - 2; layer >= 0; layer--) {
+    const lo = layer / (layers.length - 1);
+    const hi = (layer + 1) / (layers.length - 1);
+    const band = document.createElement('canvas');
+    band.width = W;
+    band.height = H;
+    const bx = band.getContext('2d');
+    const bi = bx.createImageData(W, H);
+
+    for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+      const subjectA = maskPixels[p + 3] / 255;
+      const near = depthPixels[p] / 255;
+      const far = 1 - near;
+      const center = (lo + hi) * 0.5;
+      const half = (hi - lo) * 0.5;
+      const weight = 1 - smoothstep(center - half, center + half, far);
+      // Never let background pixels overwrite the subject. The final subject
+      // composite below also provides a second line of defence.
+      const alpha = Math.round(weight * (1 - subjectA) * 255);
       bi.data[p] = bi.data[p + 1] = bi.data[p + 2] = 255;
-      bi.data[p + 3] = Math.round(q * (1 - a) * 255);
+      bi.data[p + 3] = alpha;
     }
     bx.putImageData(bi, 0, 0);
-    outCtx.globalCompositeOperation = 'source-over';
-    outCtx.drawImage(canvases[band], 0, 0);
-    outCtx.globalCompositeOperation = 'destination-out';
-    outCtx.drawImage(bandMask, 0, 0);
-    outCtx.globalCompositeOperation = 'source-over';
+    out.globalCompositeOperation = 'source-over';
+    const maskedLayer = document.createElement('canvas');
+    maskedLayer.width = W;
+    maskedLayer.height = H;
+    const lx = maskedLayer.getContext('2d');
+    lx.drawImage(layers[layer], 0, 0);
+    lx.globalCompositeOperation = 'destination-in';
+    lx.drawImage(band, 0, 0);
+    out.drawImage(maskedLayer, 0, 0);
   }
-  // The layered approach above is intentionally conservative; final subject composite is done by caller.
+
+  out.globalCompositeOperation = 'source-over';
+  return output;
 }
 
-export async function applyPortraitAI(source, depth, edge, progress, opts = {}) {
+function buildSimpleBlur(source, subjectMask, strength) {
+  const bg = blur(source, Math.min(18, 1.5 + strength * 0.16));
+  const out = document.createElement('canvas');
+  out.width = source.width;
+  out.height = source.height;
+  const o = out.getContext('2d');
+  o.drawImage(bg, 0, 0);
+  const bgMask = document.createElement('canvas');
+  bgMask.width = source.width;
+  bgMask.height = source.height;
+  const b = bgMask.getContext('2d');
+  b.fillStyle = '#fff';
+  b.fillRect(0, 0, out.width, out.height);
+  b.globalCompositeOperation = 'destination-out';
+  b.drawImage(subjectMask, 0, 0, out.width, out.height);
+  const layer = document.createElement('canvas');
+  layer.width = out.width;
+  layer.height = out.height;
+  const l = layer.getContext('2d');
+  l.drawImage(bg, 0, 0);
+  l.globalCompositeOperation = 'destination-in';
+  l.drawImage(bgMask, 0, 0);
+  o.clearRect(0, 0, out.width, out.height);
+  o.drawImage(layer, 0, 0);
+  return out;
+}
+
+export async function applyPortraitAI(source, depthStrength, edgeProtection, progress, opts = {}) {
   progress('Running person segmentation…');
-  const raw = makeMask(source, edge);
-  progress('Refining subject edge…');
-  const mask = soft(raw, edge);
+  const rawMask = makeMask(source, edgeProtection);
+  progress('Protecting fine hair, glasses and nearby edges…');
+  const subjectMask = featherMask(rawMask, edgeProtection);
 
   let depthMap = null;
+  let depthMode = 'fallback';
+
   if (opts.useDepth !== false) {
-    progress('Estimating relative distance with Depth AI…');
-    depthMap = await getDepthMap(source, progress);
-    progress('Building natural distance-based blur…');
-  } else {
-    progress('Creating gentle background blur…');
-  }
-
-  const out = document.createElement('canvas'); out.width = source.width; out.height = source.height;
-  const o = out.getContext('2d', { willReadFrequently: true });
-
-  if (depthMap) {
-    const layers = makeDepthBlurLayers(source, depthMap, depth);
-    // Build a depth-weighted background directly with pixel alpha masks.
-    const base = layers.canvases[0]; o.drawImage(base, 0, 0);
-    const maskPx = mask.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, source.width, source.height).data;
-    const dCanvas = document.createElement('canvas'); dCanvas.width = source.width; dCanvas.height = source.height;
-    const dc = dCanvas.getContext('2d', { willReadFrequently: true }); dc.drawImage(depthMap, 0, 0, source.width, source.height);
-    const dp = dc.getImageData(0, 0, source.width, source.height).data;
-    // Four smooth blur bands. The transition is gradual to avoid a cut-out look.
-    for (let band = 1; band < layers.canvases.length; band++) {
-      const lo = (band - 1) / layers.canvases.length;
-      const hi = band / layers.canvases.length + 0.18;
-      const bm = document.createElement('canvas'); bm.width = source.width; bm.height = source.height;
-      const bx = bm.getContext('2d'); const bi = bx.createImageData(source.width, source.height);
-      for (let i = 0, p = 0; i < dp.length; i += 4, p += 4) {
-        const near = dp[i] / 255; const far = 1 - near;
-        const subjectA = maskPx[p + 3] / 255;
-        const w = Math.max(0, Math.min(1, (far - lo) / Math.max(0.12, hi - lo)));
-        bi.data[p] = bi.data[p + 1] = bi.data[p + 2] = 255;
-        bi.data[p + 3] = Math.round(w * (1 - subjectA) * 210);
+    progress('Estimating natural distance…');
+    try {
+      depthMap = await getDepthMap(source, progress);
+      depthMode = 'ai';
+      progress('Building natural distance-based blur…');
+    } catch (e) {
+      progress('Depth AI unavailable — using safe local distance fallback…');
+      if (typeof opts.onDepthFallback === 'function') {
+        opts.onDepthFallback(e);
       }
-      bx.putImageData(bi, 0, 0);
-      o.globalCompositeOperation = 'source-over';
-      const tmp = document.createElement('canvas'); tmp.width = source.width; tmp.height = source.height;
-      const tx = tmp.getContext('2d'); tx.drawImage(layers.canvases[band], 0, 0); tx.globalCompositeOperation = 'destination-in'; tx.drawImage(bm, 0, 0); o.drawImage(tmp, 0, 0);
+      depthMap = makeHeuristicDepth(source, subjectMask);
+      depthMode = 'fallback';
     }
-  } else {
-    const bg = blur(source, 1 + depth * 0.10); o.drawImage(bg, 0, 0);
   }
 
-  const subject = document.createElement('canvas'); subject.width = source.width; subject.height = source.height;
-  const s = subject.getContext('2d'); s.drawImage(source, 0, 0); s.globalCompositeOperation = 'destination-in'; s.drawImage(mask, 0, 0, source.width, source.height);
+  let background;
+  if (depthMap) {
+    background = buildDepthBlur(source, depthMap, subjectMask, depthStrength);
+  } else {
+    background = buildSimpleBlur(source, subjectMask, depthStrength);
+  }
+
+  // Final subject composite: the original image always wins inside the mask.
+  // This is the key protection against halos around hair, glasses and objects
+  // touching the face/body.
+  const out = document.createElement('canvas');
+  out.width = source.width;
+  out.height = source.height;
+  const o = out.getContext('2d');
+  o.drawImage(background, 0, 0);
+
+  const subject = document.createElement('canvas');
+  subject.width = source.width;
+  subject.height = source.height;
+  const s = subject.getContext('2d');
+  s.drawImage(source, 0, 0);
+  s.globalCompositeOperation = 'destination-in';
+  s.drawImage(subjectMask, 0, 0, source.width, source.height);
   o.drawImage(subject, 0, 0);
-  return { canvas: out, mask, depthMap };
+
+  return { canvas: out, mask: subjectMask, depthMap, depthMode };
 }
