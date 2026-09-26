@@ -1,13 +1,10 @@
-# Portrait AI V3 — loading diagnostic
+# Portrait AI V4
 
-Copy the contents into the existing `/portrait/` folder.
+Fixes the V3 processing failure: the CPU segmenter was created with MediaPipe defaults, which do not request a category mask. V4 explicitly requests both confidence and category masks for CPU/GPU, then prefers the confidence mask for softer portrait edges.
 
-## Test
-1. Upload a photo.
-2. Tap **Load Portrait AI**.
-3. Read the **AI diagnostics** box.
-4. If all required stages show ✓, tap **Apply Portrait**.
-
-V3 deliberately initializes CPU first and only attempts GPU as a fallback. It also tries jsDelivr and unpkg for the MediaPipe JS runtime. The segmentation model remains the official Google MediaPipe Selfie Segmenter model.
-
-This version is diagnostic: do not integrate it into the main app until one successful run is confirmed.
+Test:
+1. Choose photo
+2. Load Portrait AI
+3. Apply Portrait
+4. Try Depth 70%, Edge Protection High
+5. Use Show subject mask only for diagnostics

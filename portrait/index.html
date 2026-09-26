@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Portrait Mode AI V3</title><link rel="stylesheet" href="portrait.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Portrait Mode AI V4</title><link rel="stylesheet" href="portrait.css"></head>
 <body><main class="card">
-<header><h1>Portrait Mode <span>AI V3</span></h1><p>AI loading diagnostic + person segmentation test.</p></header>
+<header><h1>Portrait Mode <span>AI V4</span></h1><p>AI loading diagnostic + person segmentation test.</p></header>
 <label class="file-box"><input id="portraitFile" type="file" accept="image/*"><div><strong>Choose a photo</strong><small>Tap to open Gallery / Files</small></div></label>
 <div class="preview"><canvas id="canvas"></canvas><div id="status">Choose a photo to begin.</div></div>
 <section class="panel"><div class="row"><b>Depth</b><span id="depthValue">70%</span></div><input id="depth" type="range" min="0" max="100" value="70"></section>
@@ -9,5 +9,5 @@
 <label class="check"><input id="showMask" type="checkbox"> Show subject mask (diagnostic)</label>
 <div class="buttons"><button id="load" disabled>Load Portrait AI</button><button id="apply" disabled>Apply Portrait</button><button id="download" disabled>Download</button></div>
 <section class="diagnostic"><b>AI diagnostics</b><ol id="diag"><li>Waiting for photo.</li></ol></section>
-<p class="note">V3 tests the runtime, WASM, model and CPU/GPU initialization separately. Image processing remains on-device after the model is loaded.</p>
+<p class="note">V4 fixes the runtime, WASM, model and CPU/GPU initialization separately. Image processing remains on-device after the model is loaded.</p>
 </main><script type="module" src="portrait-upload.js"></script></body></html>
