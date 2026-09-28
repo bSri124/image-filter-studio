@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Portrait Mode AI V12</title>
+<title>Portrait Mode AI V13</title>
 <link rel="stylesheet" href="portrait.css">
 </head>
 <body>
 <main class="card">
 <header>
-  <h1>Portrait Mode <span>AI V11</span></h1>
-  <p>Natural phone-style portrait with halo-safe edges, distance depth and controlled enhancement. Processing stays in your browser.</p>
+  <h1>Portrait Mode <span>AI V13</span></h1>
+  <p>Natural phone-style portrait with adaptive edge recovery, distance depth and controlled tone/color enhancement. Processing stays in your browser.</p>
 </header>
 
 <label class="file-box">
@@ -24,20 +24,20 @@
 </div>
 
 <section class="panel">
-  <div class="row"><b>Depth strength</b><span id="depthValue">70%</span></div>
+  <div class="row"><b>Depth strength</b><span id="depthValue">68%</span></div>
   <input id="depth" type="range" min="0" max="100" value="68">
 </section>
 
 <section class="panel enhance-panel">
-  <div class="row"><b>iPhone-style Enhance</b><span id="enhanceValue">65%</span></div>
+  <div class="row"><b>iPhone-style Enhance</b><span id="enhanceValue">70%</span></div>
   <input id="enhance" type="range" min="0" max="100" value="70">
-  <small class="hint">Phone-style color, highlight recovery, shadow lift and subject-only detail. Tuned to stay natural.</small>
+  <small class="hint">Natural saturation/vibrance, highlight recovery, shadow lift, richer blacks, gentle contrast and subject detail.</small>
 </section>
 
 <section class="panel">
-  <div class="row"><b>Edge protection</b><span id="edgeValue">High</span></div>
-  <input id="edge" type="range" min="0" max="100" value="92">
-  <small class="hint">High protection keeps fine hair, spectacles and nearby objects cleaner.</small>
+  <div class="row"><b>Edge protection</b><span id="edgeValue">Very High</span></div>
+  <input id="edge" type="range" min="0" max="100" value="95">
+  <small class="hint">V13 adds conservative edge recovery around hair, clothing, shoes and thin boundaries without creating a hard halo.</small>
 </section>
 
 <label class="check"><input id="depthAI" type="checkbox" checked> Natural distance-based depth</label>
@@ -55,7 +55,7 @@
   <ol id="diag"><li>Waiting for photo.</li></ol>
 </section>
 
-<p class="note">V12 adds a soft edge-recovery ring around the AI mask, stronger hair/clothing protection, continuous distance blur and restrained phone-style enhancement. Compare cycles Original → Enhanced → Portrait Effect. Photos are processed locally.</p>
+<p class="note">V13 = adaptive edge recovery + continuous relative-depth blur + controlled iPhone-style tone/color finishing. Compare cycles Original → Enhancement Only → Portrait Effect. Photos are processed locally.</p>
 </main>
 <script type="module" src="portrait-upload.js"></script>
 </body>

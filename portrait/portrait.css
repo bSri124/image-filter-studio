@@ -20,9 +20,5 @@ header p{margin:5px 0 12px;color:#697384;font-size:13px;line-height:1.35}
   .buttons button { min-height: 44px; }
 }
 
-/* V12: clearer comparison control on small screens */
-#compare { min-width: 0; }
-#compare:not(:disabled) { border-color:#111; }
-@media (max-width: 560px) {
-  .buttons button { font-size: 12px; }
-}
+/* V13 */
+.enhance-panel { background: linear-gradient(180deg,#fff,#fafbfc); }
