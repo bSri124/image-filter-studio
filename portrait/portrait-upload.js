@@ -161,7 +161,6 @@ apply.onclick = async () => {
     compare.disabled = false;
     compare.textContent = 'Show Original';
     compareMode = 'effect';
-    enhancedStage = null;
     log(r.depthMode === 'ai' ? 'Real relative depth applied ✓' : 'Local natural-depth fallback applied ✓', true);
     if (Number(enhance.value) > 0) log(`iPhone-style enhancement applied ✓ (${enhance.value}%)`, true);
     setStatus(r.depthMode === 'ai' ? 'NATURAL PORTRAIT APPLIED ✓' : 'NATURAL PORTRAIT APPLIED ✓ (local fallback)');

@@ -198,15 +198,74 @@ function makeMask(source, edgeProtection) {
 }
 
 function featherMask(mask, edgeProtection) {
+  // Keep the segmentation edge itself relatively tight. A separate expanded
+  // protection mask is used later to stop blurred background pixels bleeding
+  // back into hair/clothing edges.
   const c = document.createElement('canvas');
   c.width = mask.width;
   c.height = mask.height;
   const x = c.getContext('2d');
-  const radius = 0.45 + (100 - edgeProtection) * 0.012;
-  x.filter = `blur(${radius}px)`;
+  const radius = 0.25 + Math.max(0, 100 - edgeProtection) * 0.006;
+  if (radius > 0.3) x.filter = `blur(${radius.toFixed(2)}px)`;
   x.drawImage(mask, 0, 0);
   x.filter = 'none';
   return c;
+}
+
+function maxFilterAlpha(alpha, W, H, radius) {
+  if (radius <= 0) return alpha;
+  // Fast separable max filter. This dilates the subject mask without the
+  // expensive radius^2 operation of a naive morphological filter.
+  const tmp = new Uint8ClampedArray(alpha.length);
+  const out = new Uint8ClampedArray(alpha.length);
+  const r = Math.round(radius);
+
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    for (let x = 0; x < W; x++) {
+      let m = 0;
+      const a = Math.max(0, x - r), b = Math.min(W - 1, x + r);
+      for (let xx = a; xx <= b; xx++) m = Math.max(m, alpha[row + xx]);
+      tmp[row + x] = m;
+    }
+  }
+  for (let y = 0; y < H; y++) {
+    const a = Math.max(0, y - r), b = Math.min(H - 1, y + r);
+    for (let x = 0; x < W; x++) {
+      let m = 0;
+      for (let yy = a; yy <= b; yy++) m = Math.max(m, tmp[yy * W + x]);
+      out[y * W + x] = m;
+    }
+  }
+  return out;
+}
+
+function buildEdgeSafeMasks(subjectMask, edgeProtection) {
+  const W = subjectMask.width, H = subjectMask.height;
+  const src = document.createElement('canvas');
+  src.width = W; src.height = H;
+  const sx = src.getContext('2d', { willReadFrequently: true });
+  sx.drawImage(subjectMask, 0, 0);
+  const alpha = sx.getImageData(0, 0, W, H).data;
+  const a = new Uint8ClampedArray(W * H);
+  for (let i = 0, p = 0; i < a.length; i++, p += 4) a[i] = alpha[p + 3];
+
+  // High protection reserves a slightly wider no-blur safety zone around the
+  // subject. Hair and narrow objects therefore don't get a dark/bright halo.
+  const radius = 2 + Math.round(edgeProtection * 0.055); // ~2–7 px
+  const dilated = maxFilterAlpha(a, W, H, radius);
+
+  const protect = document.createElement('canvas');
+  protect.width = W; protect.height = H;
+  const px = protect.getContext('2d');
+  const pi = px.createImageData(W, H);
+  for (let i = 0, p = 0; i < dilated.length; i++, p += 4) {
+    pi.data[p] = pi.data[p + 1] = pi.data[p + 2] = 255;
+    pi.data[p + 3] = dilated[i];
+  }
+  px.putImageData(pi, 0, 0);
+
+  return { subjectMask, protectMask: protect };
 }
 
 function blur(source, radius) {
@@ -309,7 +368,7 @@ function makeHeuristicDepth(source, mask) {
   return c;
 }
 
-function buildDepthBlur(source, depthMap, subjectMask, strength) {
+function buildDepthBlur(source, depthMap, subjectMask, protectMask, strength) {
   const W = source.width, H = source.height;
   const depthCanvas = document.createElement('canvas');
   depthCanvas.width = W; depthCanvas.height = H;
@@ -320,7 +379,7 @@ function buildDepthBlur(source, depthMap, subjectMask, strength) {
   const maskCanvas = document.createElement('canvas');
   maskCanvas.width = W; maskCanvas.height = H;
   const mx = maskCanvas.getContext('2d', { willReadFrequently: true });
-  mx.drawImage(subjectMask, 0, 0, W, H);
+  mx.drawImage(protectMask || subjectMask, 0, 0, W, H);
   const mp = mx.getImageData(0, 0, W, H).data;
 
   // More natural than discrete cut-out bands: several blur layers are blended
@@ -329,6 +388,7 @@ function buildDepthBlur(source, depthMap, subjectMask, strength) {
   const radii = [0, maxRadius * 0.18, maxRadius * 0.38, maxRadius * 0.62, maxRadius];
   const layers = radii.map(r => blur(source, r));
   const layerPixels = layers.map(c => c.getContext('2d', {willReadFrequently:true}).getImageData(0,0,W,H).data);
+  const sourcePixels = source.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
 
   const out = document.createElement('canvas');
   out.width = W; out.height = H;
@@ -346,15 +406,20 @@ function buildDepthBlur(source, depthMap, subjectMask, strength) {
     const lo = Math.floor(pos);
     const hi = Math.min(layers.length - 1, lo + 1);
     const w = pos - lo;
-    const bgA = 1 - subjectA;
-    const p0 = lo * 4 * 0; // documents intent; pixel indexing uses p below
-    const i0 = p, i1 = hi === lo ? p : p;
-    const r0 = layerPixels[lo][i0], g0 = layerPixels[lo][i0+1], b0 = layerPixels[lo][i0+2];
-    const r1 = layerPixels[hi][i1], g1 = layerPixels[hi][i1+1], b1 = layerPixels[hi][i1+2];
-    d[p] = Math.round((r0 + (r1-r0)*w) * bgA);
-    d[p+1] = Math.round((g0 + (g1-g0)*w) * bgA);
-    d[p+2] = Math.round((b0 + (b1-b0)*w) * bgA);
-    d[p+3] = Math.round(bgA * 255);
+    const blurWeight = 1 - subjectA;
+    const r0 = layerPixels[lo][p], g0 = layerPixels[lo][p+1], b0 = layerPixels[lo][p+2];
+    const r1 = layerPixels[hi][p], g1 = layerPixels[hi][p+1], b1 = layerPixels[hi][p+2];
+    const br = r0 + (r1-r0)*w;
+    const bg = g0 + (g1-g0)*w;
+    const bb = b0 + (b1-b0)*w;
+    const sr = sourcePixels[p], sg = sourcePixels[p+1], sb = sourcePixels[p+2];
+    // Keep the protected fringe close to the original image. This prevents
+    // blur kernels from pulling bright shirts/skin into the background and
+    // creating a visible halo around hair and clothing.
+    d[p] = Math.round(sr * (1 - blurWeight) + br * blurWeight);
+    d[p+1] = Math.round(sg * (1 - blurWeight) + bg * blurWeight);
+    d[p+2] = Math.round(sb * (1 - blurWeight) + bb * blurWeight);
+    d[p+3] = 255;
   }
   od.putImageData(oi, 0, 0);
 
@@ -468,38 +533,40 @@ function applySubjectDetail(canvas, subjectMask, amount) {
   return out;
 }
 
-function buildSimpleBlur(source, subjectMask, strength) {
+function buildSimpleBlur(source, protectMask, strength) {
   const bg = blur(source, Math.min(18, 1.5 + strength * 0.16));
+  const W = source.width, H = source.height;
   const out = document.createElement('canvas');
-  out.width = source.width;
-  out.height = source.height;
-  const o = out.getContext('2d');
-  o.drawImage(bg, 0, 0);
-  const bgMask = document.createElement('canvas');
-  bgMask.width = source.width;
-  bgMask.height = source.height;
-  const b = bgMask.getContext('2d');
-  b.fillStyle = '#fff';
-  b.fillRect(0, 0, out.width, out.height);
-  b.globalCompositeOperation = 'destination-out';
-  b.drawImage(subjectMask, 0, 0, out.width, out.height);
-  const layer = document.createElement('canvas');
-  layer.width = out.width;
-  layer.height = out.height;
-  const l = layer.getContext('2d');
-  l.drawImage(bg, 0, 0);
-  l.globalCompositeOperation = 'destination-in';
-  l.drawImage(bgMask, 0, 0);
-  o.clearRect(0, 0, out.width, out.height);
-  o.drawImage(layer, 0, 0);
+  out.width = W; out.height = H;
+  const o = out.getContext('2d', { willReadFrequently: true });
+  const src = o.createImageData(W, H);
+
+  const sx = source.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  const bx = bg.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  const pmc = document.createElement('canvas');
+  pmc.width = W; pmc.height = H;
+  const px = pmc.getContext('2d', { willReadFrequently: true });
+  px.drawImage(protectMask, 0, 0, W, H);
+  const pm = px.getImageData(0, 0, W, H).data;
+
+  for (let p = 0; p < src.data.length; p += 4) {
+    const w = 1 - pm[p + 3] / 255;
+    src.data[p] = Math.round(sx[p] * (1 - w) + bx[p] * w);
+    src.data[p + 1] = Math.round(sx[p + 1] * (1 - w) + bx[p + 1] * w);
+    src.data[p + 2] = Math.round(sx[p + 2] * (1 - w) + bx[p + 2] * w);
+    src.data[p + 3] = 255;
+  }
+  o.putImageData(src, 0, 0);
   return out;
 }
 
 export async function applyPortraitAI(source, depthStrength, edgeProtection, progress, opts = {}) {
   progress('Running person segmentation…');
   const rawMask = makeMask(source, edgeProtection);
-  progress('Protecting fine hair, glasses and nearby edges…');
+  progress('Refining subject edges and building halo protection…');
   const subjectMask = featherMask(rawMask, edgeProtection);
+  const masks = buildEdgeSafeMasks(subjectMask, edgeProtection);
+  const protectMask = masks.protectMask;
 
   // Finish the source before depth compositing. This keeps the subject and
   // blurred background color-consistent and avoids sharpening the final blur.
@@ -527,14 +594,14 @@ export async function applyPortraitAI(source, depthStrength, edgeProtection, pro
 
   let background;
   if (depthMap) {
-    background = buildDepthBlur(enhancedSource, depthMap, subjectMask, depthStrength);
+    background = buildDepthBlur(enhancedSource, depthMap, subjectMask, protectMask, depthStrength);
   } else {
-    background = buildSimpleBlur(enhancedSource, subjectMask, depthStrength);
+    background = buildSimpleBlur(enhancedSource, protectMask, depthStrength);
   }
 
-  // Final subject composite: the original image always wins inside the mask.
-  // This is the key protection against halos around hair, glasses and objects
-  // touching the face/body.
+  // Final subject composite uses the tight segmentation mask. The wider
+  // protection mask has already prevented blurred pixels from bleeding into
+  // the fine edge region.
   const out = document.createElement('canvas');
   out.width = source.width;
   out.height = source.height;
