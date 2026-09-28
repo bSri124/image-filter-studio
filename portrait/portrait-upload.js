@@ -10,6 +10,7 @@ const apply = $('apply');
 const download = $('download');
 const depth = $('depth');
 const edge = $('edge');
+const enhance = $('enhance');
 const showMask = $('showMask');
 const diag = $('diag');
 const depthAI = $('depthAI');
@@ -32,10 +33,12 @@ function clearLog() { diag.innerHTML = ''; }
 function updateValues() {
   $('depthValue').textContent = `${depth.value}%`;
   $('edgeValue').textContent = edge.value >= 75 ? 'High' : edge.value >= 45 ? 'Medium' : 'Low';
+  $('enhanceValue').textContent = `${enhance.value}%`;
 }
 updateValues();
 depth.oninput = updateValues;
 edge.oninput = updateValues;
+enhance.oninput = updateValues;
 
 async function ensureAI() {
   if (aiReady) return true;
@@ -135,6 +138,7 @@ apply.onclick = async () => {
       text => setStatus(text),
       {
         useDepth: depthAI.checked,
+        enhance: Number(enhance.value),
         onDepthFallback: e => log(`Depth AI fallback activated — ${e?.message || String(e)}`, false)
       }
     );
@@ -147,6 +151,7 @@ apply.onclick = async () => {
     ctx.drawImage(result, 0, 0);
     download.disabled = false;
     log(r.depthMode === 'ai' ? 'Real relative depth applied ✓' : 'Local natural-depth fallback applied ✓', true);
+    if (Number(enhance.value) > 0) log(`iPhone-style enhancement applied ✓ (${enhance.value}%)`, true);
     setStatus(r.depthMode === 'ai' ? 'NATURAL PORTRAIT APPLIED ✓' : 'NATURAL PORTRAIT APPLIED ✓ (local fallback)');
   } catch (e) {
     console.error(e);

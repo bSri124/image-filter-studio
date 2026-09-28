@@ -377,6 +377,99 @@ function buildDepthBlur(source, depthMap, subjectMask, strength) {
   return output;
 }
 
+
+function enhancePhoto(source, amount) {
+  // Local, phone-friendly computational-photography pass. It is intentionally
+  // restrained: recover shadows, compress highlights, add a little midtone
+  // contrast/vibrance and finish with a very light unsharp mask. This is not
+  // meant to repaint faces; it improves the existing pixels.
+  if (!amount || amount <= 0) return source;
+
+  const a = clamp(amount / 100);
+  const W = source.width;
+  const H = source.height;
+  const base = document.createElement('canvas');
+  base.width = W;
+  base.height = H;
+  const bx = base.getContext('2d', { willReadFrequently: true });
+  bx.drawImage(source, 0, 0);
+
+  const blurRadius = 0.55 + a * 0.35;
+  const soft = document.createElement('canvas');
+  soft.width = W;
+  soft.height = H;
+  const sx = soft.getContext('2d');
+  sx.filter = `blur(${blurRadius.toFixed(2)}px)`;
+  sx.drawImage(base, 0, 0);
+  sx.filter = 'none';
+
+  const src = bx.getImageData(0, 0, W, H);
+  const bp = sx.getImageData(0, 0, W, H).data;
+  const d = src.data;
+
+  // Gentle HDR-style curve. Values are deliberately small so white shirts,
+  // skin and bright windows do not become cartoonishly processed.
+  const contrast = 1 + 0.075 * a;
+  const exposure = 0.018 * a;
+  const shadowLift = 0.075 * a;
+  const highlightRoll = 0.105 * a;
+  const saturationBoost = 0.035 * a;
+  const vibrance = 0.13 * a;
+  const warm = 1.6 * a;
+  const sharpen = 0.16 * a;
+
+  for (let p = 0; p < d.length; p += 4) {
+    let r = d[p] / 255;
+    let g = d[p + 1] / 255;
+    let b = d[p + 2] / 255;
+
+    let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const shadow = Math.pow(1 - y, 2.0);
+    const highlight = Math.pow(y, 2.15);
+
+    r += exposure + shadow * shadowLift - highlight * highlightRoll;
+    g += exposure + shadow * shadowLift - highlight * highlightRoll;
+    b += exposure + shadow * shadowLift - highlight * highlightRoll;
+
+    // Midtone contrast around middle gray.
+    r = (r - 0.5) * contrast + 0.5;
+    g = (g - 0.5) * contrast + 0.5;
+    b = (b - 0.5) * contrast + 0.5;
+
+    r = clamp(r); g = clamp(g); b = clamp(b);
+
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    const chroma = maxC - minC;
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const sat = maxC > 0 ? chroma / maxC : 0;
+    const satFactor = 1 + saturationBoost + vibrance * (1 - sat);
+
+    r = luma + (r - luma) * satFactor;
+    g = luma + (g - luma) * satFactor;
+    b = luma + (b - luma) * satFactor;
+
+    // Tiny warm bias, similar to a pleasing phone-camera finishing pass.
+    r += warm / 255;
+    b -= (warm * 0.45) / 255;
+
+    // Unsharp mask: enhance existing detail, never inventing a new edge.
+    const br = bp[p] / 255;
+    const bg = bp[p + 1] / 255;
+    const bb = bp[p + 2] / 255;
+    r += (r - br) * sharpen;
+    g += (g - bg) * sharpen;
+    b += (b - bb) * sharpen;
+
+    d[p] = Math.round(clamp(r) * 255);
+    d[p + 1] = Math.round(clamp(g) * 255);
+    d[p + 2] = Math.round(clamp(b) * 255);
+  }
+
+  bx.putImageData(src, 0, 0);
+  return base;
+}
+
 function buildSimpleBlur(source, subjectMask, strength) {
   const bg = blur(source, Math.min(18, 1.5 + strength * 0.16));
   const out = document.createElement('canvas');
@@ -410,6 +503,11 @@ export async function applyPortraitAI(source, depthStrength, edgeProtection, pro
   progress('Protecting fine hair, glasses and nearby edges…');
   const subjectMask = featherMask(rawMask, edgeProtection);
 
+  // Finish the source before depth compositing. This keeps the subject and
+  // blurred background color-consistent and avoids sharpening the final blur.
+  const enhancedSource = enhancePhoto(source, Number(opts.enhance || 0));
+  if (Number(opts.enhance || 0) > 0) progress('Applying natural iPhone-style color and detail…');
+
   let depthMap = null;
   let depthMode = 'fallback';
 
@@ -431,9 +529,9 @@ export async function applyPortraitAI(source, depthStrength, edgeProtection, pro
 
   let background;
   if (depthMap) {
-    background = buildDepthBlur(source, depthMap, subjectMask, depthStrength);
+    background = buildDepthBlur(enhancedSource, depthMap, subjectMask, depthStrength);
   } else {
-    background = buildSimpleBlur(source, subjectMask, depthStrength);
+    background = buildSimpleBlur(enhancedSource, subjectMask, depthStrength);
   }
 
   // Final subject composite: the original image always wins inside the mask.
@@ -449,7 +547,7 @@ export async function applyPortraitAI(source, depthStrength, edgeProtection, pro
   subject.width = source.width;
   subject.height = source.height;
   const s = subject.getContext('2d');
-  s.drawImage(source, 0, 0);
+  s.drawImage(enhancedSource, 0, 0);
   s.globalCompositeOperation = 'destination-in';
   s.drawImage(subjectMask, 0, 0, source.width, source.height);
   o.drawImage(subject, 0, 0);

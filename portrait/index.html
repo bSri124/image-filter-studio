@@ -28,6 +28,12 @@
   <input id="depth" type="range" min="0" max="100" value="70">
 </section>
 
+<section class="panel enhance-panel">
+  <div class="row"><b>iPhone-style Enhance</b><span id="enhanceValue">55%</span></div>
+  <input id="enhance" type="range" min="0" max="100" value="55">
+  <small class="hint">Smart color, HDR-style highlights/shadows, natural vibrance and gentle detail. The original subject is kept intact.</small>
+</section>
+
 <section class="panel">
   <div class="row"><b>Edge protection</b><span id="edgeValue">High</span></div>
   <input id="edge" type="range" min="0" max="100" value="85">
@@ -48,7 +54,7 @@
   <ol id="diag"><li>Waiting for photo.</li></ol>
 </section>
 
-<p class="note">Depth AI is attempted automatically. If the depth model cannot be downloaded, the app switches to a conservative local fallback instead of failing. Photos are processed locally after selection.</p>
+<p class="note">Enhancement is applied locally after the portrait composite. Depth AI is attempted automatically. If the depth model cannot be downloaded, the app switches to a conservative local fallback instead of failing. Photos are processed locally after selection.</p>
 </main>
 <script type="module" src="portrait-upload.js"></script>
 </body>
