@@ -22,3 +22,11 @@ This module is designed to live independently under `/portrait/` in the existing
 7. Download the JPEG.
 
 The enhancement is intentionally not an exact copy of Apple's proprietary camera pipeline. It is a local photographic finishing pass designed to give a similar clean, natural phone-camera look without requiring a server.
+
+
+## V10 changes
+- Natural continuous depth blending instead of visible blur bands.
+- Stronger but restrained phone-style tonal/color finishing.
+- Subject-only detail enhancement; blurred background is not sharpened.
+- Compare button cycles Original -> Enhanced -> Portrait Effect.
+- Keeps local browser processing and the depth-model fallback.

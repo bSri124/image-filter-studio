@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Portrait Mode AI V8</title>
+<title>Portrait Mode AI V10</title>
 <link rel="stylesheet" href="portrait.css">
 </head>
 <body>
 <main class="card">
 <header>
   <h1>Portrait Mode <span>AI V8</span></h1>
-  <p>Natural depth blur with fine-edge protection. Processing stays in your browser.</p>
+  <p>Smart phone-style portrait: natural distance depth, edge-safe detail and richer color. Processing stays in your browser.</p>
 </header>
 
 <label class="file-box">
@@ -29,9 +29,9 @@
 </section>
 
 <section class="panel enhance-panel">
-  <div class="row"><b>iPhone-style Enhance</b><span id="enhanceValue">55%</span></div>
-  <input id="enhance" type="range" min="0" max="100" value="55">
-  <small class="hint">Smart color, HDR-style highlights/shadows, natural vibrance and gentle detail. The original subject is kept intact.</small>
+  <div class="row"><b>iPhone-style Enhance</b><span id="enhanceValue">65%</span></div>
+  <input id="enhance" type="range" min="0" max="100" value="65">
+  <small class="hint">Phone-style color, highlight recovery, shadow lift and subject-only detail. Tuned to stay natural.</small>
 </section>
 
 <section class="panel">
@@ -55,7 +55,7 @@
   <ol id="diag"><li>Waiting for photo.</li></ol>
 </section>
 
-<p class="note">Enhancement is applied locally after the portrait composite. Depth AI is attempted automatically. If the depth model cannot be downloaded, the app switches to a conservative local fallback instead of failing. Photos are processed locally after selection.</p>
+<p class="note">V10 uses a natural depth transition, global color finishing and subject-only detail. Compare cycles through Original → Enhanced → Portrait Effect. Depth AI is attempted automatically; if unavailable, a conservative local fallback is used. Photos are processed locally.</p>
 </main>
 <script type="module" src="portrait-upload.js"></script>
 </body>

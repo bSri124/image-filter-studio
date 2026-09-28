@@ -1,4 +1,4 @@
-// Portrait AI V7
+// Portrait AI V10
 // - MediaPipe Selfie Segmenter for the subject mask.
 // - Depth Anything V2 Small (when available) for monocular relative depth.
 // - A deterministic local fallback keeps the portrait effect usable when the
@@ -310,164 +310,162 @@ function makeHeuristicDepth(source, mask) {
 }
 
 function buildDepthBlur(source, depthMap, subjectMask, strength) {
-  const W = source.width;
-  const H = source.height;
+  const W = source.width, H = source.height;
   const depthCanvas = document.createElement('canvas');
-  depthCanvas.width = W;
-  depthCanvas.height = H;
+  depthCanvas.width = W; depthCanvas.height = H;
   const dx = depthCanvas.getContext('2d', { willReadFrequently: true });
   dx.drawImage(depthMap, 0, 0, W, H);
-  const depthPixels = dx.getImageData(0, 0, W, H).data;
+  const dp = dx.getImageData(0, 0, W, H).data;
 
   const maskCanvas = document.createElement('canvas');
-  maskCanvas.width = W;
-  maskCanvas.height = H;
+  maskCanvas.width = W; maskCanvas.height = H;
   const mx = maskCanvas.getContext('2d', { willReadFrequently: true });
   mx.drawImage(subjectMask, 0, 0, W, H);
-  const maskPixels = mx.getImageData(0, 0, W, H).data;
+  const mp = mx.getImageData(0, 0, W, H).data;
 
-  // Five levels give a smooth transition without expensive per-pixel blur.
-  const maxRadius = Math.min(26, 2 + strength * 0.24);
-  const radii = [0, maxRadius * 0.16, maxRadius * 0.34, maxRadius * 0.62, maxRadius];
+  // More natural than discrete cut-out bands: several blur layers are blended
+  // continuously according to relative distance. Subject pixels are excluded.
+  const maxRadius = Math.min(24, 1.5 + strength * 0.23);
+  const radii = [0, maxRadius * 0.18, maxRadius * 0.38, maxRadius * 0.62, maxRadius];
   const layers = radii.map(r => blur(source, r));
+  const layerPixels = layers.map(c => c.getContext('2d', {willReadFrequently:true}).getImageData(0,0,W,H).data);
 
-  const output = document.createElement('canvas');
-  output.width = W;
-  output.height = H;
-  const out = output.getContext('2d');
-  out.drawImage(layers[layers.length - 1], 0, 0); // far background first
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const od = out.getContext('2d');
+  const oi = od.createImageData(W, H);
+  const d = oi.data;
 
-  // Overlay progressively sharper layers according to relative depth.
-  // Depth Anything's normalized high values are treated as nearer.
-  for (let layer = layers.length - 2; layer >= 0; layer--) {
-    const lo = layer / (layers.length - 1);
-    const hi = (layer + 1) / (layers.length - 1);
-    const band = document.createElement('canvas');
-    band.width = W;
-    band.height = H;
-    const bx = band.getContext('2d');
-    const bi = bx.createImageData(W, H);
-
-    for (let i = 0, p = 0; i < W * H; i++, p += 4) {
-      const subjectA = maskPixels[p + 3] / 255;
-      const near = depthPixels[p] / 255;
-      const far = 1 - near;
-      const center = (lo + hi) * 0.5;
-      const half = (hi - lo) * 0.5;
-      const weight = 1 - smoothstep(center - half, center + half, far);
-      // Never let background pixels overwrite the subject. The final subject
-      // composite below also provides a second line of defence.
-      const alpha = Math.round(weight * (1 - subjectA) * 255);
-      bi.data[p] = bi.data[p + 1] = bi.data[p + 2] = 255;
-      bi.data[p + 3] = alpha;
-    }
-    bx.putImageData(bi, 0, 0);
-    out.globalCompositeOperation = 'source-over';
-    const maskedLayer = document.createElement('canvas');
-    maskedLayer.width = W;
-    maskedLayer.height = H;
-    const lx = maskedLayer.getContext('2d');
-    lx.drawImage(layers[layer], 0, 0);
-    lx.globalCompositeOperation = 'destination-in';
-    lx.drawImage(band, 0, 0);
-    out.drawImage(maskedLayer, 0, 0);
+  for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+    const subjectA = mp[p + 3] / 255;
+    const near = dp[p] / 255;
+    const far = 1 - near;
+    // Gentle near-side bias: objects farther away get progressively more blur.
+    const t = clamp(far * 1.08);
+    const pos = t * (layers.length - 1);
+    const lo = Math.floor(pos);
+    const hi = Math.min(layers.length - 1, lo + 1);
+    const w = pos - lo;
+    const bgA = 1 - subjectA;
+    const p0 = lo * 4 * 0; // documents intent; pixel indexing uses p below
+    const i0 = p, i1 = hi === lo ? p : p;
+    const r0 = layerPixels[lo][i0], g0 = layerPixels[lo][i0+1], b0 = layerPixels[lo][i0+2];
+    const r1 = layerPixels[hi][i1], g1 = layerPixels[hi][i1+1], b1 = layerPixels[hi][i1+2];
+    d[p] = Math.round((r0 + (r1-r0)*w) * bgA);
+    d[p+1] = Math.round((g0 + (g1-g0)*w) * bgA);
+    d[p+2] = Math.round((b0 + (b1-b0)*w) * bgA);
+    d[p+3] = Math.round(bgA * 255);
   }
+  od.putImageData(oi, 0, 0);
 
-  out.globalCompositeOperation = 'source-over';
-  return output;
+  // The transparent subject area is filled later by the sharp subject layer.
+  const final = document.createElement('canvas');
+  final.width = W; final.height = H;
+  const f = final.getContext('2d');
+  f.drawImage(out, 0, 0);
+  return final;
 }
 
-
 function enhancePhoto(source, amount) {
-  // Local, phone-friendly computational-photography pass. It is intentionally
-  // restrained: recover shadows, compress highlights, add a little midtone
-  // contrast/vibrance and finish with a very light unsharp mask. This is not
-  // meant to repaint faces; it improves the existing pixels.
+  // V10 global finishing pass. Color/tonal work is intentionally separated
+  // from subject detail so the background does not become crunchy.
   if (!amount || amount <= 0) return source;
 
   const a = clamp(amount / 100);
-  const W = source.width;
-  const H = source.height;
+  const W = source.width, H = source.height;
   const base = document.createElement('canvas');
-  base.width = W;
-  base.height = H;
+  base.width = W; base.height = H;
   const bx = base.getContext('2d', { willReadFrequently: true });
   bx.drawImage(source, 0, 0);
-
-  const blurRadius = 0.55 + a * 0.35;
-  const soft = document.createElement('canvas');
-  soft.width = W;
-  soft.height = H;
-  const sx = soft.getContext('2d');
-  sx.filter = `blur(${blurRadius.toFixed(2)}px)`;
-  sx.drawImage(base, 0, 0);
-  sx.filter = 'none';
-
   const src = bx.getImageData(0, 0, W, H);
-  const bp = sx.getImageData(0, 0, W, H).data;
   const d = src.data;
 
-  // Gentle HDR-style curve. Values are deliberately small so white shirts,
-  // skin and bright windows do not become cartoonishly processed.
-  const contrast = 1 + 0.075 * a;
-  const exposure = 0.018 * a;
-  const shadowLift = 0.075 * a;
-  const highlightRoll = 0.105 * a;
-  const saturationBoost = 0.035 * a;
-  const vibrance = 0.13 * a;
-  const warm = 1.6 * a;
-  const sharpen = 0.16 * a;
+  // Slightly stronger than V9, but still restrained enough for white clothes.
+  const contrast = 1 + 0.095 * a;
+  const exposure = 0.014 * a;
+  const shadowLift = 0.095 * a;
+  const highlightRoll = 0.125 * a;
+  const saturationBoost = 0.045 * a;
+  const vibrance = 0.17 * a;
+  const warm = 1.15 * a;
 
   for (let p = 0; p < d.length; p += 4) {
-    let r = d[p] / 255;
-    let g = d[p + 1] / 255;
-    let b = d[p + 2] / 255;
-
-    let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    const shadow = Math.pow(1 - y, 2.0);
-    const highlight = Math.pow(y, 2.15);
+    let r = d[p] / 255, g = d[p + 1] / 255, b = d[p + 2] / 255;
+    const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const shadow = Math.pow(1 - y, 2.1);
+    const highlight = Math.pow(y, 2.25);
 
     r += exposure + shadow * shadowLift - highlight * highlightRoll;
     g += exposure + shadow * shadowLift - highlight * highlightRoll;
     b += exposure + shadow * shadowLift - highlight * highlightRoll;
 
-    // Midtone contrast around middle gray.
     r = (r - 0.5) * contrast + 0.5;
     g = (g - 0.5) * contrast + 0.5;
     b = (b - 0.5) * contrast + 0.5;
-
     r = clamp(r); g = clamp(g); b = clamp(b);
 
-    const maxC = Math.max(r, g, b);
-    const minC = Math.min(r, g, b);
+    const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
     const chroma = maxC - minC;
     const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     const sat = maxC > 0 ? chroma / maxC : 0;
     const satFactor = 1 + saturationBoost + vibrance * (1 - sat);
-
     r = luma + (r - luma) * satFactor;
     g = luma + (g - luma) * satFactor;
     b = luma + (b - luma) * satFactor;
 
-    // Tiny warm bias, similar to a pleasing phone-camera finishing pass.
+    // Tiny warm bias, avoiding orange skin.
     r += warm / 255;
-    b -= (warm * 0.45) / 255;
-
-    // Unsharp mask: enhance existing detail, never inventing a new edge.
-    const br = bp[p] / 255;
-    const bg = bp[p + 1] / 255;
-    const bb = bp[p + 2] / 255;
-    r += (r - br) * sharpen;
-    g += (g - bg) * sharpen;
-    b += (b - bb) * sharpen;
+    b -= (warm * 0.32) / 255;
 
     d[p] = Math.round(clamp(r) * 255);
     d[p + 1] = Math.round(clamp(g) * 255);
     d[p + 2] = Math.round(clamp(b) * 255);
   }
-
   bx.putImageData(src, 0, 0);
   return base;
+}
+
+function applySubjectDetail(canvas, subjectMask, amount) {
+  if (!amount || amount <= 0) return canvas;
+  const a = clamp(amount / 100);
+  const W = canvas.width, H = canvas.height;
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const o = out.getContext('2d', { willReadFrequently: true });
+  o.drawImage(canvas, 0, 0);
+
+  const soft = document.createElement('canvas');
+  soft.width = W; soft.height = H;
+  const sx = soft.getContext('2d');
+  sx.filter = `blur(${(0.65 + a * 0.35).toFixed(2)}px)`;
+  sx.drawImage(canvas, 0, 0);
+  sx.filter = 'none';
+
+  const img = o.getImageData(0, 0, W, H);
+  const bp = sx.getImageData(0, 0, W, H).data;
+  const m = document.createElement('canvas');
+  m.width = W; m.height = H;
+  const mx = m.getContext('2d', { willReadFrequently: true });
+  mx.drawImage(subjectMask, 0, 0, W, H);
+  const mp = mx.getImageData(0, 0, W, H).data;
+  const d = img.data;
+
+  // Detail is deliberately weaker on soft/flat skin than on textured edges.
+  // A local contrast gate reduces the chance of emphasizing compression noise.
+  const strength = 0.20 * a;
+  for (let p = 0; p < d.length; p += 4) {
+    const ma = mp[p + 3] / 255;
+    if (ma <= 0.01) continue;
+    const r = d[p], g = d[p + 1], b = d[p + 2];
+    const br = bp[p], bg = bp[p + 1], bb = bp[p + 2];
+    const edge = Math.min(1, (Math.abs(r-br) + Math.abs(g-bg) + Math.abs(b-bb)) / 72);
+    const k = strength * ma * (0.35 + 0.65 * edge);
+    d[p] = Math.round(clamp((r + (r - br) * k) / 255) * 255);
+    d[p + 1] = Math.round(clamp((g + (g - bg) * k) / 255) * 255);
+    d[p + 2] = Math.round(clamp((b + (b - bb) * k) / 255) * 255);
+  }
+  o.putImageData(img, 0, 0);
+  return out;
 }
 
 function buildSimpleBlur(source, subjectMask, strength) {
@@ -506,7 +504,7 @@ export async function applyPortraitAI(source, depthStrength, edgeProtection, pro
   // Finish the source before depth compositing. This keeps the subject and
   // blurred background color-consistent and avoids sharpening the final blur.
   const enhancedSource = enhancePhoto(source, Number(opts.enhance || 0));
-  if (Number(opts.enhance || 0) > 0) progress('Applying natural iPhone-style color and detail…');
+  if (Number(opts.enhance || 0) > 0) progress('Applying natural phone-style color and tone…');
 
   let depthMap = null;
   let depthMode = 'fallback';
@@ -552,5 +550,9 @@ export async function applyPortraitAI(source, depthStrength, edgeProtection, pro
   s.drawImage(subjectMask, 0, 0, source.width, source.height);
   o.drawImage(subject, 0, 0);
 
-  return { canvas: out, mask: subjectMask, depthMap, depthMode };
+  // V10: detail is applied only where the subject mask says it is safe.
+  // This keeps hair/clothing crisp without sharpening the blurred background.
+  const detailed = applySubjectDetail(out, subjectMask, Number(opts.enhance || 0));
+
+  return { canvas: detailed, mask: subjectMask, depthMap, depthMode, enhancedCanvas: enhancedSource };
 }

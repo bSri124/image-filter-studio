@@ -22,7 +22,8 @@ let mask = null;
 let depthMap = null;
 let aiReady = false;
 let loadingPromise = null;
-let showingOriginal = false;
+let compareMode = 'effect';
+let enhancedStage = null;
 
 function setStatus(text) { status.textContent = text; }
 function log(text, ok = null) {
@@ -106,7 +107,8 @@ file.onchange = async event => {
     download.disabled = true;
     compare.disabled = true;
     compare.textContent = 'Show Original';
-    showingOriginal = false;
+    compareMode = 'effect';
+    enhancedStage = null;
     load.disabled = false;
     aiReady = false;
 
@@ -151,13 +153,15 @@ apply.onclick = async () => {
     result = r.canvas;
     mask = r.mask;
     depthMap = r.depthMap;
+    enhancedStage = r.enhancedCanvas || null;
     canvas.width = result.width;
     canvas.height = result.height;
     ctx.drawImage(result, 0, 0);
     download.disabled = false;
     compare.disabled = false;
     compare.textContent = 'Show Original';
-    showingOriginal = false;
+    compareMode = 'effect';
+    enhancedStage = null;
     log(r.depthMode === 'ai' ? 'Real relative depth applied ✓' : 'Local natural-depth fallback applied ✓', true);
     if (Number(enhance.value) > 0) log(`iPhone-style enhancement applied ✓ (${enhance.value}%)`, true);
     setStatus(r.depthMode === 'ai' ? 'NATURAL PORTRAIT APPLIED ✓' : 'NATURAL PORTRAIT APPLIED ✓ (local fallback)');
@@ -173,7 +177,8 @@ apply.onclick = async () => {
 showMask.onchange = () => {
   if (!source || !mask) return;
   if (!showMask.checked) {
-    ctx.drawImage(result || source, 0, 0);
+    compareMode = 'effect';
+    if (result) ctx.drawImage(result, 0, 0); else ctx.drawImage(source, 0, 0);
     return;
   }
 
@@ -197,12 +202,25 @@ showMask.onchange = () => {
 
 compare.onclick = () => {
   if (!source || !result) return;
-  showingOriginal = !showingOriginal;
-  if (showingOriginal) {
+  if (compareMode === 'effect') {
+    compareMode = 'original';
     ctx.drawImage(source, 0, 0);
-    compare.textContent = 'Show Effect';
+    compare.textContent = 'Show Enhanced';
     setStatus('ORIGINAL PHOTO');
+  } else if (compareMode === 'original') {
+    compareMode = 'enhanced';
+    if (enhancedStage) {
+      ctx.drawImage(enhancedStage, 0, 0);
+      compare.textContent = 'Show Effect';
+      setStatus('ENHANCEMENT ONLY');
+    } else {
+      compareMode = 'effect';
+      ctx.drawImage(result, 0, 0);
+      compare.textContent = 'Show Original';
+      setStatus('PORTRAIT EFFECT ✓');
+    }
   } else {
+    compareMode = 'effect';
     ctx.drawImage(result, 0, 0);
     compare.textContent = 'Show Original';
     setStatus('PORTRAIT EFFECT ✓');

@@ -13,3 +13,9 @@ header p{margin:5px 0 12px;color:#697384;font-size:13px;line-height:1.35}
 .diagnostic{margin-top:10px;padding:10px;border:1px solid #dde1e7;border-radius:11px;font-size:12px}.diagnostic ol{margin:7px 0 0;padding-left:22px}.diagnostic li{margin:4px 0;line-height:1.35}.ok{font-weight:700}.fail{font-weight:700}
 .note{font-size:10px;color:#747d8b;margin:9px 2px 0;line-height:1.4}
 @media(max-width:520px){.card{width:calc(100% - 10px);padding:10px;border-radius:14px}h1{font-size:23px}.buttons{grid-template-columns:1fr 1fr}.buttons button{font-size:12px}}
+
+/* V10: compact compare button stays usable on phones */
+@media (max-width: 560px) {
+  .buttons { grid-template-columns: 1fr 1fr; }
+  .buttons button { min-height: 44px; }
+}
