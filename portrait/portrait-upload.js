@@ -8,6 +8,7 @@ const status = $('status');
 const load = $('load');
 const apply = $('apply');
 const download = $('download');
+const compare = $('compare');
 const depth = $('depth');
 const edge = $('edge');
 const enhance = $('enhance');
@@ -21,6 +22,7 @@ let mask = null;
 let depthMap = null;
 let aiReady = false;
 let loadingPromise = null;
+let showingOriginal = false;
 
 function setStatus(text) { status.textContent = text; }
 function log(text, ok = null) {
@@ -102,6 +104,9 @@ file.onchange = async event => {
     depthMap = null;
     apply.disabled = true;
     download.disabled = true;
+    compare.disabled = true;
+    compare.textContent = 'Show Original';
+    showingOriginal = false;
     load.disabled = false;
     aiReady = false;
 
@@ -150,6 +155,9 @@ apply.onclick = async () => {
     canvas.height = result.height;
     ctx.drawImage(result, 0, 0);
     download.disabled = false;
+    compare.disabled = false;
+    compare.textContent = 'Show Original';
+    showingOriginal = false;
     log(r.depthMode === 'ai' ? 'Real relative depth applied ✓' : 'Local natural-depth fallback applied ✓', true);
     if (Number(enhance.value) > 0) log(`iPhone-style enhancement applied ✓ (${enhance.value}%)`, true);
     setStatus(r.depthMode === 'ai' ? 'NATURAL PORTRAIT APPLIED ✓' : 'NATURAL PORTRAIT APPLIED ✓ (local fallback)');
@@ -185,6 +193,20 @@ showMask.onchange = () => {
   }
   x.putImageData(pixels, 0, 0);
   ctx.drawImage(overlay, 0, 0);
+};
+
+compare.onclick = () => {
+  if (!source || !result) return;
+  showingOriginal = !showingOriginal;
+  if (showingOriginal) {
+    ctx.drawImage(source, 0, 0);
+    compare.textContent = 'Show Effect';
+    setStatus('ORIGINAL PHOTO');
+  } else {
+    ctx.drawImage(result, 0, 0);
+    compare.textContent = 'Show Original';
+    setStatus('PORTRAIT EFFECT ✓');
+  }
 };
 
 download.onclick = () => {
