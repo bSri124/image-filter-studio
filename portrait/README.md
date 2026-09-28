@@ -1,24 +1,33 @@
-# Portrait AI V11 — Natural Portrait
+# Portrait AI V12 — Natural Portrait
 
-Independent `/portrait/` module for the existing Image Filter Studio repository.
+This is the next refinement of the working V11 portrait module.
 
-## V11 focus
-- Tight subject compositing mask plus a wider protection mask around the subject.
-- Protected fringe stays close to the enhanced source instead of receiving background blur.
-- Reduces bright/dark halos around hair, dresses, shoes, arms and nearby objects.
-- Continuous relative-depth blur when Depth Anything is available.
-- Safe local depth fallback when the depth model cannot be fetched.
-- iPhone-style enhancement with restrained tone/color finishing.
-- Subject-only detail enhancement.
-- Original → Enhanced → Portrait comparison remains available.
-- All photo processing remains in the browser.
+## V12 changes
+- Soft edge-recovery ring around the segmentation boundary.
+- Wider no-blur protection zone remains in place.
+- Partial recovery avoids turning the protection ring into a visible cut-out.
+- Better coverage around hair, dress/shirt edges, arms, shoes and nearby objects.
+- Continuous relative-depth blur is retained when Depth Anything is available.
+- Local fallback remains available when the depth model cannot be downloaded.
+- Phone-style enhancement and Original → Enhanced → Portrait comparison are retained.
+- Processing remains local in the browser.
 
-## Recommended starting values
+## Starting values
 - Depth: 68%
 - iPhone-style Enhance: 70%
 - Edge protection: 92%
+- Natural distance-based depth: ON
 
-High edge protection now has a real processing effect: it expands a no-blur safety zone around the segmentation mask, rather than only changing a label.
+## Important limitation
+No browser segmentation model can guarantee 100% edge recovery for every photograph.
+Fine hair, motion blur, transparent objects, low contrast and subject/background colors
+that are very similar can be genuinely ambiguous. V12 reduces the visible failure area
+by combining a tight mask, expanded protection and a soft recovery ring.
 
-## Install
-Copy the contents into the existing repository's `/portrait/` folder. No new repository is required.
+## Files
+- index.html
+- portrait.css
+- portrait-upload.js
+- portrait-model.js
+
+No `.tmp` files are included.

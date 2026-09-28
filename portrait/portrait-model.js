@@ -1,4 +1,4 @@
-// Portrait AI V10
+// Portrait AI V12
 // - MediaPipe Selfie Segmenter for the subject mask.
 // - Depth Anything V2 Small (when available) for monocular relative depth.
 // - A deterministic local fallback keeps the portrait effect usable when the
@@ -250,8 +250,12 @@ function buildEdgeSafeMasks(subjectMask, edgeProtection) {
   const a = new Uint8ClampedArray(W * H);
   for (let i = 0, p = 0; i < a.length; i++, p += 4) a[i] = alpha[p + 3];
 
-  // High protection reserves a slightly wider no-blur safety zone around the
-  // subject. Hair and narrow objects therefore don't get a dark/bright halo.
+  // V12: two related masks are used:
+  // - protectMask: wider and opaque enough to stop blur kernels bleeding into
+  //   hair/clothes.
+  // - compositeMask: a soft recovery ring that preserves some original pixels
+  //   just outside an imperfect AI boundary. This is intentionally partial,
+  //   not a hard dilation, so the edge still looks photographic.
   const radius = 2 + Math.round(edgeProtection * 0.055); // ~2–7 px
   const dilated = maxFilterAlpha(a, W, H, radius);
 
@@ -259,13 +263,35 @@ function buildEdgeSafeMasks(subjectMask, edgeProtection) {
   protect.width = W; protect.height = H;
   const px = protect.getContext('2d');
   const pi = px.createImageData(W, H);
+
+  const recovered = new Uint8ClampedArray(a.length);
+  const recoveryStrength = 0.28 + (edgeProtection / 100) * 0.22; // ~0.50 at max
   for (let i = 0, p = 0; i < dilated.length; i++, p += 4) {
+    const baseA = a[i] / 255;
+    const dilA = dilated[i] / 255;
+
     pi.data[p] = pi.data[p + 1] = pi.data[p + 2] = 255;
     pi.data[p + 3] = dilated[i];
+
+    // Only recover pixels outside the original mask. The closer they are to
+    // the detected subject, the more of the original image is retained.
+    const ring = Math.max(0, dilA - baseA);
+    const recoveredA = clamp(baseA + ring * recoveryStrength);
+    recovered[i] = Math.round(recoveredA * 255);
   }
   px.putImageData(pi, 0, 0);
 
-  return { subjectMask, protectMask: protect };
+  const composite = document.createElement('canvas');
+  composite.width = W; composite.height = H;
+  const cx = composite.getContext('2d');
+  const ci = cx.createImageData(W, H);
+  for (let i = 0, p = 0; i < recovered.length; i++, p += 4) {
+    ci.data[p] = ci.data[p + 1] = ci.data[p + 2] = 255;
+    ci.data[p + 3] = recovered[i];
+  }
+  cx.putImageData(ci, 0, 0);
+
+  return { subjectMask, protectMask: protect, compositeMask: composite };
 }
 
 function blur(source, radius) {
@@ -384,7 +410,7 @@ function buildDepthBlur(source, depthMap, subjectMask, protectMask, strength) {
 
   // More natural than discrete cut-out bands: several blur layers are blended
   // continuously according to relative distance. Subject pixels are excluded.
-  const maxRadius = Math.min(24, 1.5 + strength * 0.23);
+  const maxRadius = Math.min(22, 1.4 + strength * 0.21);
   const radii = [0, maxRadius * 0.18, maxRadius * 0.38, maxRadius * 0.62, maxRadius];
   const layers = radii.map(r => blur(source, r));
   const layerPixels = layers.map(c => c.getContext('2d', {willReadFrequently:true}).getImageData(0,0,W,H).data);
@@ -567,6 +593,7 @@ export async function applyPortraitAI(source, depthStrength, edgeProtection, pro
   const subjectMask = featherMask(rawMask, edgeProtection);
   const masks = buildEdgeSafeMasks(subjectMask, edgeProtection);
   const protectMask = masks.protectMask;
+  const compositeMask = masks.compositeMask || subjectMask;
 
   // Finish the source before depth compositing. This keeps the subject and
   // blurred background color-consistent and avoids sharpening the final blur.
@@ -614,12 +641,12 @@ export async function applyPortraitAI(source, depthStrength, edgeProtection, pro
   const s = subject.getContext('2d');
   s.drawImage(enhancedSource, 0, 0);
   s.globalCompositeOperation = 'destination-in';
-  s.drawImage(subjectMask, 0, 0, source.width, source.height);
+  s.drawImage(compositeMask, 0, 0, source.width, source.height);
   o.drawImage(subject, 0, 0);
 
   // V10: detail is applied only where the subject mask says it is safe.
   // This keeps hair/clothing crisp without sharpening the blurred background.
-  const detailed = applySubjectDetail(out, subjectMask, Number(opts.enhance || 0));
+  const detailed = applySubjectDetail(out, compositeMask, Number(opts.enhance || 0));
 
   return { canvas: detailed, mask: subjectMask, depthMap, depthMode, enhancedCanvas: enhancedSource };
 }
